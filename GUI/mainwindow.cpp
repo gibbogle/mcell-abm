@@ -12,10 +12,11 @@
 #include "plot.h"
 #include "myvtk.h"
 #include "field.h"
-#include "global.h"
 
 #include "dialog.h"
 //#include "colours.h"
+
+#include "global.h"
 
 #ifdef linux
 #include <QTcpServer>
@@ -106,8 +107,8 @@ MainWindow::MainWindow(QWidget *parent)
 	nTicks = 1000;
 	tickVTK = 100;	// timer tick for VTK in milliseconds
 	paramSaved = false;
-	paused = false;
-	posdata = false;
+    paused = false;
+    posdata = false;
     DCmotion = false;
     done = false;
     first = true;
@@ -155,8 +156,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     timer = new QTimer(this);
     vtk = new MyVTK(mdiArea_VTK, widget_key);
-//    vtk = new MyVTK(page_3D, widget_key);
+    LOG_MSG("did new MyVTK");
     vtk->init();
+    LOG_MSG("did vtk->init");
 
     videoVTK = new QVideoOutput(this, vtk->renWin);
 
@@ -189,7 +191,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     pushButtonLoadCellMLFile->setEnabled(false);
     tabs->setCurrentIndex(3);   //tab_run
-    cellML_loaded = false;
+
+    cellML_loaded = true;   ////////false;
+
     goToInputs();
 }
 
@@ -1477,7 +1481,6 @@ void MainWindow::goToInputs()
 {
     stackedWidget->setCurrentIndex(0);
     Global::showingVTK = false;
-    Global::showingFACS = false;
     action_inputs->setEnabled(false);
     action_outputs->setEnabled(true);
     action_VTK->setEnabled(true);
@@ -1491,7 +1494,6 @@ void MainWindow::goToOutputs()
 {
     stackedWidget->setCurrentIndex(1);    
     Global::showingVTK = false;
-    Global::showingFACS = false;
     action_outputs->setEnabled(false);
     action_inputs->setEnabled(true);
     action_VTK->setEnabled(true);
@@ -1770,8 +1772,8 @@ void MainWindow::runServer()
     Global::nt_vtk = 0;
 	for (int k=0; k<parm->nParams; k++) {
 		PARAM_SET p = parm->get_param(k);
-		if (p.tag.compare("NDAYS") == 0) {
-			hours = p.value*24;
+        if (p.tag.compare("NHOURS") == 0) {
+            hours = p.value;
 		}
 		if (p.tag.compare("NT_ANIMATION") == 0) {
             Global::nt_vtk = p.value;
@@ -1948,11 +1950,12 @@ void MainWindow::drawGraphs()
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::displayScene()
 {
+    LOG_MSG("displayScene");
 	bool redo = false;	// need to understand this
 	started = true;
     exthread->mutex2.lock();
 	bool fast = true;
-	vtk->get_cell_positions(fast);
+//	vtk->get_cell_positions(fast);
 	vtk->renderCells(redo,false);
     if (videoVTK->record) {
         videoVTK->recorder();
@@ -2046,7 +2049,7 @@ void MainWindow::outputData(QString qdata)
 //				savepos = false;
 //			}
 //		}
-		vtk->read_cell_positions(cellfile, vtkfile, savepos);
+//		vtk->read_cell_positions(cellfile, vtkfile, savepos);
 		started = true;
         if (Global::showingVTK > 0 || firstVTK) {
 			firstVTK = false;

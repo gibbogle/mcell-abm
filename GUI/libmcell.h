@@ -7,11 +7,13 @@
 extern "C" {
 #endif
 
+#include "hex.h"
+
 void execute(int *, char *, int *,char *, int *);
 void simulate_step(int *);
 void terminate_run(int *);
-void get_dimensions(int *, double *);
-void get_scene(int *, int *);
+void get_dimensions(int *, int *, int *, double *);
+void get_scene(int *, HEXAHEDRON *);
 void get_summary(int *);
 void get_concdata(int *, double *, double *);
 void CellML_load_file(char *, int, int *, int *);

@@ -9,6 +9,7 @@
 #endif
 #include "myvtk.h"
 #include "log.h"
+
 #include "global.h"
 
 LOG_USE();
@@ -72,14 +73,13 @@ vtkStandardNewMacro(MouseInteractorStyle4);
 //-----------------------------------------------------------------------------------------
 MyVTK::MyVTK(QWidget *page, QWidget *key_page)
 {
-	zoomlevel = 0.7;
+    zoomlevel = 0.7;
 	double backgroundColor[] = {0.0,0.0,0.0};
-
 
 	Pi = 4*atan(1.0);
     page_VTK = page;
     Global::leftb = false;
-    key_canvas(key_page);
+//    key_canvas(key_page);
     qvtkWidget = new QVTKWidget(page,QFlag(0));
 	LOG_MSG("Created a new QVTKWidget");
 	QVBoxLayout *layout = new QVBoxLayout;
@@ -95,15 +95,15 @@ MyVTK::MyVTK(QWidget *page, QWidget *key_page)
     renWin->AddRenderer(ren);
 	ren->SetBackground(backgroundColor);
 	ren->ResetCamera();
-	iren = qvtkWidget->GetInteractor();
+    iren = qvtkWidget->GetInteractor();
 
 	vtkSmartPointer<MouseInteractorStyle4> style = vtkSmartPointer<MouseInteractorStyle4>::New();
-	iren->SetInteractorStyle( style );
+    iren->SetInteractorStyle( style );
 
-	iren->Initialize();
+    iren->Initialize();
 
 	// Create mappers
-	createMappers();
+    createMappers();
 
 	// Create image filter for save Snapshot()
 //	w2img = vtkWindowToImageFilter::New();
@@ -120,6 +120,15 @@ MyVTK::MyVTK(QWidget *page, QWidget *key_page)
     display_celltype[2] = true;
     TCpos_list.clear();
     ren->GetActiveCamera()->Zoom(zoomlevel);		// try zooming OUT
+//    ren->GetActiveCamera()->SetDistance(100);
+
+    Global::Nhex = 0;
+    points = NULL;
+    polygons = NULL;
+    polygonPolyData = NULL;
+    hexmapper = NULL;
+    hexactor = NULL;
+    reset = true;
 }
 
 //-----------------------------------------------------------------------------------------
@@ -287,122 +296,11 @@ void MyVTK::createMappers()
 }
 
 
-//-----------------------------------------------------------------------------------------
-// The cell info is fetched from the DLL by ExecThread::snapshot().
-// The info is transmitted in the integer arrays cell_list[] and DC_list[]
-// The info is transferred here into TCpos_list and DCpos_list, which are Qlists.
-//-----------------------------------------------------------------------------------------
-void MyVTK::get_cell_positions(bool fast)
-{
-    int ninfo = 6;
-//    LOG_QMSG("get_cell_positions");
-	double BC_diam = 0.9;
-//	double DC_diam = 1.8;
-    TCpos_list.clear();
-//	DCpos_list.clear();
-//	bondpos_list.clear();
-    for (int i=0; i<Global::ncell_list; i++) {
-        int j = ninfo*i;
-		CELL_POS cp;
-        cp.tag = Global::cell_list[j];
-        cp.x = Global::cell_list[j+1];
-        cp.y = Global::cell_list[j+2];
-        cp.z = Global::cell_list[j+3];
-        cp.state = Global::cell_list[j+4];
-        cp.diameter = Global::cell_list[j+5]/100.;
-//        cp.diameter = BC_diam;
-        TCpos_list.append(cp);
-//        double r, g, b;
-//        if (cp.state > 0) {
-//            unpack(cp.state, &r, &g, &b);
-//        } else {
-//            r = g = b = 0;
-//        }
-//        sprintf(msg,"B cell: %d: tag: %d pos: %d %d %d state: %d %lf %lf %lf",i,cp.tag,cp.x,cp.y,cp.z,cp.state,r,g,b);
-//        LOG_MSG(msg);
-	}
-
-}
-
-//-----------------------------------------------------------------------------------------
-// Reading cell positions from a file.  Out of date.
-// NOT USED
-//-----------------------------------------------------------------------------------------
-void MyVTK::read_cell_positions(QString infileName, QString outfileName, bool savepos)
-{	
-    TCpos_list.clear();
-//    DCpos_list.clear();
-//    bondpos_list.clear();
-	QString line, saveline;
-	QTextStream *out = NULL;
-	QFile *vtkdata = NULL;
-	if (savepos) {
-		vtkdata = new QFile(outfileName);
-		if (!vtkdata->open(QFile::Append )) {
-			LOG_MSG("Open failure on vtk file");
-			return;
-		}
-		out = new QTextStream(vtkdata);
-	}
-	QFile posdata(infileName);
-	if (posdata.open(QFile::ReadOnly)) {
-		QTextStream in(&posdata);
-		do {
-			line = in.readLine();
-			if (line.length() > 0) {
-				if (savepos) {
-					*out << line << "\n";
-					out->flush();
-				}
-				saveline = line;
-				QStringList s = line.split(" ",QString::SkipEmptyParts);
-				if (s[0].compare("T") == 0) {
-					CELL_POS cp;
-					cp.tag = s[1].toInt();
-					cp.x = s[2].toInt();
-					cp.y = s[3].toInt();
-					cp.z = s[4].toInt();
-					cp.diameter = s[5].toDouble();
-					cp.state = s[6].toDouble();
-                    TCpos_list.append(cp);
-//				}
-//                else if (s[0].compare("D") == 0) {
-//					CELL_POS cp;
-//					cp.tag = s[1].toInt();
-//					cp.x = s[2].toInt();
-//					cp.y = s[3].toInt();
-//					cp.z = s[4].toInt();
-//					cp.diameter = s[5].toDouble();
-//					cp.state = s[6].toDouble();
-//					DCpos_list.append(cp);
-//				} else if (s[0].compare("B") == 0) {
-//					BOND_POS cp;
-//					cp.BCtag = s[1].toInt();
-//					cp.DCtag = s[2].toInt();
-//					bondpos_list.append(cp);
-				} else if (s[0].compare("E") == 0) {
-					break;
-				} 
-			}
-		} while (!line.isNull());
-	}
-	posdata.close();
-	if (savepos) {
-		delete out;
-		vtkdata->close();
-		delete vtkdata;
-	}
-
-	if (QFile::exists(infileName)) {
-		QFile::rename(infileName,"TO_REMOVE");
-	}
-}
-
 //---------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------
 void MyVTK::init()
 {
-    T_Actor_list.clear();
+//  T_Actor_list.clear();
 //	D_Actor_list.clear();
 //	Bnd_Actor_list.clear();
 }
@@ -416,21 +314,42 @@ void MyVTK::cleanup()
     ACTOR_TYPE a;
 
 	LOG_MSG("VTK cleanup");
-    for (i = 0; i<T_Actor_list.length(); i++) {
-        a = T_Actor_list[i];
-        ren->RemoveActor(a.actor);
-	}
-//	for (i = 0; i<D_Actor_list.length(); i++) {
-//        a = D_Actor_list[i];
-//        ren->RemoveActor(a.actor);
-//	}
-//	for (i = 0; i<Bnd_Actor_list.length(); i++) {
-//		actor = Bnd_Actor_list[i];
-//        ren->RemoveActor(actor);
-//	}
-    T_Actor_list.clear();
-//	D_Actor_list.clear();
-//	Bnd_Actor_list.clear();
+    reset = true;
+    Global::Nhex = 0;
+    if (points) {   // free all arrays
+        LOG_MSG("free polygon arrays");
+//        hexmapper->RemoveAllInputs();
+//        LOG_MSG("removed mapper inputs");
+//        polygonPolyData->DeleteCells();
+//        polygonPolyData->RemoveDeletedCells();
+//        polygonPolyData->Delete();
+//        polygonPolyData = NULL;
+//        LOG_MSG("deleted polygonPolyData");
+//        points->Delete();
+//        points = NULL;
+//        polygons->Delete();
+//        polygons = NULL;
+//        LOG_MSG("deleted points");
+        ren->RemoveActor(hexactor);
+        LOG_MSG("removed hexactor");
+//        hexmapper->Delete();
+//        hexmapper = NULL;
+        hexmapper->RemoveAllInputs();
+//        hexactor->Delete();
+//        hexactor = NULL;
+//        LOG_MSG("deleted hexactor");
+//        int k = 0;
+//        for (;;) {
+//            if (polygon_array[k]) {
+//                polygon_array[k]->Delete();
+//                k++;
+//            } else {
+//                break;
+//            }
+//        }
+//        polygon_array = NULL;
+//        LOG_MSG("freed polygon arrays");
+    }
 	first_VTK = true;	
 }
 
@@ -438,243 +357,359 @@ void MyVTK::cleanup()
 //---------------------------------------------------------------------------------------------
 void MyVTK::renderCells(bool redo, bool zzz)
 {
-    process_Tcells();
-	if (first_VTK) {
+    process_Mcells();
+    if (Global::Nhex == 0) return;
+    if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
-		ren->ResetCamera();
+        ren->ResetCamera();
 	}
-	iren->Render();
+    LOG_MSG("do iren->Render");
+    iren->Render();
+    LOG_MSG("did iren->Render");
     first_VTK = false;
 //    if (record) {
 //        recorder();
 //    }
 }
 
+
 //---------------------------------------------------------------------------------------------
-// Interprets an int as rgb
-// USE_CELLTYPE_COLOUR, the cell type is passed in cp.state, and the colours are those
-// that were chosen in the GUI.
-// Otherwise cp.state is packed (r,g,b)
+// Bottom
+// Outside: ilong = 0, Nlong-1
+// Inside:  ilong = 0, Nlong-1
+// Top
+// Total number of polygons = 2*Ncirc*(Nlong+1)
 //---------------------------------------------------------------------------------------------
-void MyVTK::unpack(int x, double *rr, double *gg, double *bb)
+void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
 {
-	int z, r, g, b;
+    int i, icirc, ilong, khex, kpolygon, kp;
+    int order[4];
+    int NC = Global::Ncirc;
+    int NL = Global::Nlong;
+    HEXAHEDRON h;
+    POINT3D pt3D;
 
-    if (USE_CELLTYPE_COLOUR) {
-
-    } else {
-        z = x;
-        r = z>>16;
-        z = r;
-        z = z<<16;
-
-        x = x - z;
-
-        z = x;
-        g = z>>8;
-        z = g;
-        z = z<<8;
-
-        b = x - z;
+    kpolygon = 0;
+    kp = 0;
+    // Bottom
+    LOG_MSG("setPoints: Bottom");
+    order[0] = 0;
+    order[1] = 4;
+    order[2] = 5;
+    order[3] = 1;
+    ilong = 0;
+    for (icirc=0; icirc<NC; icirc++) {
+        khex = icirc;
+        h = Global::hex_list[khex];
+        // Update the polygon points
+        for (i=0; i<4; i++) {
+            pt3D = h.vertex[order[i]];
+            p->SetPoint(kp,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+//            sprintf(msg,"kp: %d icirc: %d khex: %d i: %d   %8.4f %8.4f %8.4f",kp,icirc,khex,i,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+//            LOG_MSG(msg);
+            kp++;
+        }
+        kpolygon++;
     }
-    *rr = r/255.;
-    *gg = g/255.;
-    *bb = b/255.;
+
+    // Outside surface
+    LOG_MSG("setPoints: Outside");
+    order[0] = 0;
+    order[1] = 1;
+    order[2] = 2;
+    order[3] = 3;
+    for (ilong=0; ilong<NL; ilong++) {
+        for (icirc=0; icirc<NC; icirc++) {
+            khex = ilong*NC + icirc;
+            h = Global::hex_list[khex];
+            // Update the polygon points
+            for (i=0; i<4; i++) {
+                pt3D = h.vertex[order[i]];
+                p->SetPoint(kp,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+                kp++;
+            }
+            kpolygon++;
+        }
+    }
+    // Inside surface
+    LOG_MSG("setPoints: Inside");
+    order[0] = 4;
+    order[1] = 7;
+    order[2] = 6;
+    order[3] = 5;
+    for (ilong=0; ilong<NL; ilong++) {
+        for (icirc=0; icirc<NC; icirc++) {
+            khex = ilong*NC + icirc;
+            h = Global::hex_list[khex];
+            // Update the polygon points
+            for (i=0; i<4; i++) {
+                pt3D = h.vertex[order[i]];
+                p->SetPoint(kp,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+                kp++;
+            }
+            kpolygon++;
+        }
+    }
+    // Top
+    LOG_MSG("setPoints: Top");
+    order[0] = 2;
+    order[1] = 6;
+    order[2] = 7;
+    order[3] = 3;
+    ilong = NL-1;
+    for (icirc=0; icirc<NC; icirc++) {
+        khex = (NL-1)*NC + icirc;
+        h = Global::hex_list[khex];
+        // Update the polygon points
+        for (i=0; i<4; i++) {
+            pt3D = h.vertex[order[i]];
+            p->SetPoint(kp,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+            sprintf(msg,"kp: %d icirc: %d khex: %d i: %d   %8.4f %8.4f %8.4f",kp,icirc,khex,i,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+            LOG_MSG(msg);
+            kp++;
+        }
+        kpolygon++;
+    }
+    LOG_MSG("setPoints: Done");
 }
 
 //---------------------------------------------------------------------------------------------
-// This improved, simpler method assumes only that the cell tag (cp.tag) is unique.
-// This tag is the index into T_Actor_list[], which grows as the maximum tag increases.
-// T_Actor_list now includes the field .active, which is maintained in sync with the
-// status of .actor in the renderer object ren, i.e. when the actor is added to the scene
-// .active is set to true, and when the actor is removed .active is set to false.
-// In each scene update step the status of a tag is recorded in in_pos_list[].
-// in_pos_list is compared with T_Actor_list, and actors corresponding to tags that have been
-// dropped (i.e. have in_pos_list[tag] = false but A_Actor_list[tag].active = true) are marked
-// as .active = false in T_Actor_list, and removed from the scene.
+// This code assumes that the number of cells - Ncirc and Nlong - does not change
 //---------------------------------------------------------------------------------------------
-void MyVTK::process_Tcells()
+void MyVTK::process_Mcells()
 {
-    int i, tag, maxtag;
-    double r, g, b, h;
-    double growth;
-	CELL_POS cp;
-	int axis_centre = -2;	// identifies the ellipsoid centre
-	int axis_end    = -3;	// identifies the ellipsoid extent in 5 directions
-	int axis_bottom = -4;	// identifies the ellipsoid extent in the -Y direction, i.e. bottom surface
-    bool dbug = false;
-    ACTOR_TYPE a;
-    ACTOR_TYPE *ap;
-    QColor qcolor, colour1, colour2;
-    bool display;
+    int i, order[4];
+    int icirc, ilong, khex, kpolygon, kp0;
+    int npolygons, npoints;
+    int NC = Global::Ncirc;
+    int NL = Global::Nlong;
+    double r,g,b;
+    bool SIMPLE_TEST = false;
 
- //   LOG_QMSG("process_Tcells");
-    int np = TCpos_list.length();
-    if (np == 0) return;
-    int na = T_Actor_list.length();
-    if (Global::istep < 0) {
-        sprintf(msg,"na: %d np: %d",na,np);
-        LOG_MSG(msg);
-        dbug = true;
+    if (Global::Nhex == 0) return;
+    r = 0.5;
+    g = 0.7;
+    b = 0.3;
+    if (SIMPLE_TEST) {
+        npolygons = 2;
+//        npoints = 6;
+        npoints = 8;
+    } else {
+        npolygons = 2*NC*(NL+1);
+//        npolygons = NC;     // bottom only
+        npoints = 4*npolygons;
     }
-    colour1 = celltype_colour[1];
-    colour2 = celltype_colour[2];
-    maxtag = 0;
-	for (i=0; i<np; i++) {
-        cp = TCpos_list[i];
-        tag = cp.tag;
-        maxtag = max(tag,maxtag);
-	}
-    if (dbug) {
-        sprintf(msg,"maxtag: %d",maxtag);
-        LOG_MSG(msg);
-    }
-    ap = &a;
-    for (tag=na; tag<=maxtag; tag++) {
-        ap->actor = vtkActor::New();
-        ap->actor->SetMapper(TcellMapper);
-        ap->active = false;
-        T_Actor_list.append(a);
-    }
-    na = T_Actor_list.length();
-    bool *in_pos_list;
-    in_pos_list = new bool[na];
-    for (tag=0; tag<na; tag++)
-        in_pos_list[tag] = false;
-    for (i=0; i<np; i++) {
-        cp = TCpos_list[i];
-        tag = cp.tag;
-        growth = cp.state/100.;
-        display = true;
-        // Wnt_Cyclin
-        int itype;
-        if (growth == 0) {          // G0
-            r = 0.5;
-            g = 0.5;
-            b = 0;
-            itype = 0;
-        } else if (growth < 0.4) {         // G1
-            r = 1;
-            g = 1;
-            b = 0;
-            itype = 1;
-        } else if (growth < 0.6) {  // S
-            r = 1;
-            g = 0.5;
-            b = 0;
-            itype = 2;
-        } else if (growth < 0.9) {  // G2
-            r = 1;
-            g = 0.5;
-            b = 0;
-            itype = 3;
-        } else {                    // M
-            r = 1;
-            g = 0.5;
-            b = 0;
-            itype = 4;
+    LOG_MSG("process_Mcells");
+    if (reset) {
+        reset = false;
+        LOG_MSG("construct polygon arrays");
+        if (!points) {
+            points = vtkSmartPointer<vtkPoints>::New();
         }
-        if (USE_CELLTYPE_COLOUR) {
-            qcolor = celltype_colour[itype];
-            r = qcolor.red()/255.;
-            g = qcolor.green()/255.;
-            b = qcolor.blue()/255.;
-            display = display_celltype[itype];
+        points->SetNumberOfPoints(npoints);
+        LOG_MSG("created points");
+        if (!polygons) {
+            polygons = vtkSmartPointer<vtkCellArray>::New();
+            LOG_MSG("created polygons");
         }
-        if (!display) continue;
+        polygons->Initialize();
+        polygons->SetNumberOfCells(npolygons);
 
-        in_pos_list[tag] = true;
-        if (dbug) {
-            sprintf(msg,"i: %d tag: %d",i,tag);
-            LOG_MSG(msg);
-        }
-        ap = &T_Actor_list[tag];
-        if (!ap->active) {  // Make active an actor with new tag in TCpos_list
-            if (dbug) {
-                sprintf(msg,"adding actor: %d",tag);
-                LOG_MSG(msg);
-            }
-            ren->AddActor(ap->actor);
-            ap->active = true;
-        }
-//        if (USE_CELLTYPE_COLOUR) {
-//            qcolor = celltype_colour[cp.state];
-//            r = qcolor.red()/255.;
-//            g = qcolor.green()/255.;
-//            b = qcolor.blue()/255.;
-////                sprintf(msg,"celltype: %d  r,g,b: %f %f %f",cp.state,r,g,b);
-////                LOG_MSG(msg);
-//        } else {
-//            unpack(cp.state, &r, &g, &b);
+//        if (!polygon_array) {
+//            polygon_array = new vtkSmartPointer<vtkPolygon>[10*npolygons];
+//            LOG_MSG("created polygon_array");
+//           for (i=0; i<10*npolygons; i++) {
+//               polygon_array[i] = vtkSmartPointer<vtkPolygon>::New();
+//           }
 //        }
+//        LOG_MSG("created polygon_arrays");
 
+        sprintf(msg,"npolygons: %d npoints: %d",npolygons,npoints);
+        LOG_MSG(msg);
 
-        /*
-        // Cell_cycle
-        if (growth < 1.51) {        // G1
-            r = 0;
-            g = 1;
-            b = 0;
-            qcolor = colour1;
-        } else if (growth < 1.92) { // S
-            r = 1;
-            g = 0.5;
-            b = 0;
-            qcolor = colour2;
-        } else if (growth < 2.11) { // G2
-            r = 1;
-            g = 0.5;
-            b = 0;
-            qcolor = colour2;
-        } else {                    // M
-            r = 1;
-            g = 0.5;
-            b = 0;
-            qcolor = colour2;
-        }
+        vtkSmartPointer<vtkPolygon> p;
 
+        if (SIMPLE_TEST) {
+            points->SetPoint(0,0.0, 0.0, 0.0);
+            points->SetPoint(1,1.0, 0.0, 0.0);
+            points->SetPoint(2,1.0, 1.0, 0.0);
+            points->SetPoint(3,0.0, 1.0, 0.0);
+            points->SetPoint(4,2.0, 0.0, 0.5);
+            points->SetPoint(5,2.0, 1.0, 0.5);
+            points->SetPoint(6,1.0, 1.0, 0.0);
+            points->SetPoint(7,1.0, 0.0, 0.0);
 
-        // Wnt_Cyclin
-        if (growth < 0.4) {         // G1
-            r = 1;
-            g = 1;
-            b = 0;
-        } else {                    // S, G2, M
-            r = 1;
-            g = 0.5;
-            b = 0;
-//        } else if (growth < 0.6) {  // S
-//            r = 1;
-//            g = 0.5;
-//            b = 0;
-//        } else if (growth < 0.9) {  // G2
-//            r = 1;
-//            g = 0.5;
-//            b = 0;
-//        } else {                    // M
-//            r = 1;
-//            g = 0.5;
-//            b = 0;
-        }
-        */
+            order[0] = 0;
+            order[1] = 1;
+            order[2] = 2;
+            order[3] = 3;
+            // Create the polygon
+//            p = polygon_array[0];
+            p = vtkSmartPointer<vtkPolygon>::New();
+            p->GetPointIds()->SetNumberOfIds(4); //make a quad
+            for (i=0; i<4; i++)
+                p->GetPointIds()->SetId(i, order[i]);
+            // Add the polygon to the list of polygons
+            polygons->InsertNextCell(p);
 
-        ap->actor->GetProperty()->SetColor(r, g, b);
-        ap->actor->SetScale(cp.diameter);
-//        if (cp.highlight == 0)
-//            ap->actor->GetProperty()->SetOpacity(opacity);
-        ap->actor->SetPosition(cp.x, cp.y, cp.z);
-	}
-    for (int k=0; k<T_Actor_list.length(); k++) {
-        ap = &T_Actor_list[k];
-        if (ap->active && !in_pos_list[k]) {
-            if (dbug) {
-                sprintf(msg,"removing actor: %d",k);
-                LOG_MSG(msg);
+            order[0] = 4;
+            order[1] = 5;
+//            order[2] = 2;
+//            order[3] = 1;
+            order[2] = 6;
+            order[3] = 7;
+            // Create the polygon
+//            p = polygon_array[1];
+            p = vtkSmartPointer<vtkPolygon>::New();
+            p->GetPointIds()->SetNumberOfIds(4); //make a quad
+            for (i=0; i<4; i++)
+                p->GetPointIds()->SetId(i, order[i]);
+            // Add the polygon to the list of polygons
+            polygons->InsertNextCell(p);
+
+        } else {
+            setPoints(points);
+            kpolygon = 0;
+            // Bottom
+            LOG_MSG("Create bottom polygons");
+            ilong = 0;
+            for (icirc=0; icirc<NC; icirc++) {
+                khex = icirc;
+                kp0 = 4*icirc;
+                // Create the polygon
+//                p = polygon_array[kpolygon];
+                p = vtkSmartPointer<vtkPolygon>::New();
+                p->GetPointIds()->SetNumberOfIds(4); //make a quad
+                for (i=0; i<4; i++)
+                    p->GetPointIds()->SetId(i, kp0+i);
+                // Add the polygon to a list of polygons
+                polygons->InsertNextCell(p);
+                kpolygon++;
             }
-            ren->RemoveActor(ap->actor);
-            ap->active = false;
+
+            // Outside
+            LOG_MSG("Create outside polygons");
+            for (ilong=0; ilong<NL; ilong++) {
+                for (icirc=0; icirc<NC; icirc++) {
+                    khex = ilong*NC + icirc;
+                    kp0 = 4*NC + 4*NC*ilong + 4*icirc;
+                    // Create the polygon
+//                    p = polygon_array[kpolygon];
+                    p = vtkSmartPointer<vtkPolygon>::New();
+                    p->GetPointIds()->SetNumberOfIds(4); //make a quad
+                    for (i=0; i<4; i++)
+                        p->GetPointIds()->SetId(i, kp0+i);
+                    // Add the polygon to a list of polygons
+                    polygons->InsertNextCell(p);
+                    kpolygon++;
+                }
+            }
+            // Inside
+            LOG_MSG("Create inside polygons");
+            for (ilong=0; ilong<NL; ilong++) {
+                for (icirc=0; icirc<NC; icirc++) {
+                    khex = ilong*NC + icirc;
+                    kp0 = 4*NC + 4*NC*NL + 4*NC*ilong + 4*icirc;
+                    // Create the polygon
+//                    p = polygon_array[kpolygon];
+                    p = vtkSmartPointer<vtkPolygon>::New();
+                    p->GetPointIds()->SetNumberOfIds(4); //make a quad
+                    for (i=0; i<4; i++)
+                        p->GetPointIds()->SetId(i, kp0+i);
+                    // Add the polygon to a list of polygons
+                    polygons->InsertNextCell(p);
+                    kpolygon++;
+                }
+            }
+            // Top
+            LOG_MSG("Create top polygons");
+            ilong = NL-1;
+            for (icirc=0; icirc<NC; icirc++) {
+                khex = (NL-1)*NC + icirc;
+                kp0 = 4*NC + 4*NC*NL + 4*NC*NL + 4*icirc;
+                // Create the polygon
+//                p = polygon_array[kpolygon];
+                p = vtkSmartPointer<vtkPolygon>::New();
+                p->GetPointIds()->SetNumberOfIds(4); //make a quad
+                for (i=0; i<4; i++)
+                    p->GetPointIds()->SetId(i, kp0+i);
+                // Add the polygon to a list of polygons
+                polygons->InsertNextCell(p);
+                kpolygon++;
+            }
+
         }
-	}
+        sprintf(msg,"polygons: # of cells: %d",polygons->GetNumberOfCells());
+        LOG_MSG(msg);
+        // Create a PolyData
+        LOG_MSG("Create polygonPolyData");
+        if (!polygonPolyData)
+            polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
+        LOG_MSG("polygonPolyData->SetPoints")
+        polygonPolyData->SetPoints(points);
+        LOG_MSG("polygonPolyData->SetPolys")
+        polygonPolyData->SetPolys(polygons);
+
+        // Create a mapper and actor
+        LOG_MSG("Create mapper and actor");
+        if (!hexmapper) {
+            hexmapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+        }
+#if VTK_MAJOR_VERSION <= 5
+        hexmapper->SetInput(polygonPolyData);
+#else
+        hexmapper->SetInputData(polygonPolyData);
+#endif
+        if (!hexactor) {
+            hexactor = vtkSmartPointer<vtkActor>::New();
+        }
+        hexactor->SetMapper(hexmapper);
+        ren->AddActor(hexactor);
+        ren->SetBackground(.5,.3,.31); // Background color salmon
+        hexactor->GetProperty()->SetColor(r, g, b);
+//        ren->GetActiveCamera()->SetDistance(100);
+        vtkSmartPointer<vtkUnsignedCharArray> colors = vtkSmartPointer<vtkUnsignedCharArray>::New();
+        makeColors(colors, npolygons);
+        polygonPolyData->GetCellData()->SetScalars(colors);
+    } else {
+        if (SIMPLE_TEST) {
+            points->SetPoint(0,0.0, 0.0, 0.0);
+            points->SetPoint(1,1.0, 0.0, 0.0);
+            points->SetPoint(2,1.0, 1.0, 0.0);
+            points->SetPoint(3,0.0, 1.0, 0.0);
+            points->SetPoint(4,2.0, 0.0, 0.5);
+            points->SetPoint(5,2.0, 1.0, 0.5);
+        } else {
+            LOG_MSG("Just setPoints");
+            setPoints(points);
+            polygons->Initialize();
+            vtkIdType *pointIds = new vtkIdType[4];
+            int k = 0;
+            for (int ip=0; ip<npolygons; ip++) {
+                for (i=0; i<4; i++) {
+                    pointIds[i] = k++;
+                }
+                polygons->InsertNextCell(4,pointIds);
+            }
+            vtkSmartPointer<vtkUnsignedCharArray> colors = vtkSmartPointer<vtkUnsignedCharArray>::New();
+            makeColors(colors, npolygons);
+            polygonPolyData->GetCellData()->SetScalars(colors);
+            ren->RemoveActor(hexactor);
+            ren->AddActor(hexactor);
+        }
+    }
+}
+
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
+void MyVTK::makeColors(vtkSmartPointer<vtkUnsignedCharArray> colors, int nV)
+{
+    colors->SetName("Colors");
+    colors->SetNumberOfComponents(3);
+    colors->SetNumberOfTuples(nV);
+    for (int i = 0; i < nV ;i++) {
+        colors->InsertTuple3(i, (i*123)%255,(i*54321)%255,(i*73)%255);
+    }
 }
 
 
@@ -884,6 +919,272 @@ void MyVTK::set_celltype_colour(COLOUR_TYPE *colour, QString str)
     }
 
 }
+
+//---------------------------------------------------------------------------------------------
+// Interprets an int as rgb
+// USE_CELLTYPE_COLOUR, the cell type is passed in cp.state, and the colours are those
+// that were chosen in the GUI.
+// Otherwise cp.state is packed (r,g,b)
+//---------------------------------------------------------------------------------------------
+void MyVTK::unpack(int x, double *rr, double *gg, double *bb)
+{
+    int z, r, g, b;
+
+    if (USE_CELLTYPE_COLOUR) {
+
+    } else {
+        z = x;
+        r = z>>16;
+        z = r;
+        z = z<<16;
+
+        x = x - z;
+
+        z = x;
+        g = z>>8;
+        z = g;
+        z = z<<8;
+
+        b = x - z;
+    }
+    *rr = r/255.;
+    *gg = g/255.;
+    *bb = b/255.;
+}
+
+//-----------------------------------------------------------------------------------------
+// The cell info is fetched from the DLL by ExecThread::snapshot().
+// The info is transmitted in the integer arrays cell_list[] and DC_list[]
+// The info is transferred here into TCpos_list and DCpos_list, which are Qlists.
+//-----------------------------------------------------------------------------------------
+void MyVTK::get_cell_positions(bool fast)
+{
+    int ninfo = 6;
+//    LOG_QMSG("get_cell_positions");
+    double BC_diam = 0.9;
+//	double DC_diam = 1.8;
+    TCpos_list.clear();
+//	DCpos_list.clear();
+//	bondpos_list.clear();
+    for (int i=0; i<Global::ncell_list; i++) {
+        int j = ninfo*i;
+        CELL_POS cp;
+        cp.tag = Global::cell_list[j];
+        cp.x = Global::cell_list[j+1];
+        cp.y = Global::cell_list[j+2];
+        cp.z = Global::cell_list[j+3];
+        cp.state = Global::cell_list[j+4];
+        cp.diameter = Global::cell_list[j+5]/100.;
+//        cp.diameter = BC_diam;
+        TCpos_list.append(cp);
+//        double r, g, b;
+//        if (cp.state > 0) {
+//            unpack(cp.state, &r, &g, &b);
+//        } else {
+//            r = g = b = 0;
+//        }
+//        sprintf(msg,"B cell: %d: tag: %d pos: %d %d %d state: %d %lf %lf %lf",i,cp.tag,cp.x,cp.y,cp.z,cp.state,r,g,b);
+//        LOG_MSG(msg);
+    }
+
+}
+
+
+//---------------------------------------------------------------------------------------------
+// This improved, simpler method assumes only that the cell tag (cp.tag) is unique.
+// This tag is the index into T_Actor_list[], which grows as the maximum tag increases.
+// T_Actor_list now includes the field .active, which is maintained in sync with the
+// status of .actor in the renderer object ren, i.e. when the actor is added to the scene
+// .active is set to true, and when the actor is removed .active is set to false.
+// In each scene update step the status of a tag is recorded in in_pos_list[].
+// in_pos_list is compared with T_Actor_list, and actors corresponding to tags that have been
+// dropped (i.e. have in_pos_list[tag] = false but A_Actor_list[tag].active = true) are marked
+// as .active = false in T_Actor_list, and removed from the scene.
+//---------------------------------------------------------------------------------------------
+void MyVTK::process_Tcells()
+{
+    int i, tag, maxtag;
+    double r, g, b, h;
+    double growth;
+    CELL_POS cp;
+    int axis_centre = -2;	// identifies the ellipsoid centre
+    int axis_end    = -3;	// identifies the ellipsoid extent in 5 directions
+    int axis_bottom = -4;	// identifies the ellipsoid extent in the -Y direction, i.e. bottom surface
+    bool dbug = false;
+    ACTOR_TYPE a;
+    ACTOR_TYPE *ap;
+    QColor qcolor, colour1, colour2;
+    bool display;
+
+ //   LOG_QMSG("process_Tcells");
+    int np = TCpos_list.length();
+    if (np == 0) return;
+    int na = T_Actor_list.length();
+    if (Global::istep < 0) {
+        sprintf(msg,"na: %d np: %d",na,np);
+        LOG_MSG(msg);
+        dbug = true;
+    }
+    colour1 = celltype_colour[1];
+    colour2 = celltype_colour[2];
+    maxtag = 0;
+    for (i=0; i<np; i++) {
+        cp = TCpos_list[i];
+        tag = cp.tag;
+        maxtag = max(tag,maxtag);
+    }
+    if (dbug) {
+        sprintf(msg,"maxtag: %d",maxtag);
+        LOG_MSG(msg);
+    }
+    ap = &a;
+    for (tag=na; tag<=maxtag; tag++) {
+        ap->actor = vtkActor::New();
+        ap->actor->SetMapper(TcellMapper);
+        ap->active = false;
+        T_Actor_list.append(a);
+    }
+    na = T_Actor_list.length();
+    bool *in_pos_list;
+    in_pos_list = new bool[na];
+    for (tag=0; tag<na; tag++)
+        in_pos_list[tag] = false;
+    for (i=0; i<np; i++) {
+        cp = TCpos_list[i];
+        tag = cp.tag;
+        growth = cp.state/100.;
+        display = true;
+        // Wnt_Cyclin
+        int itype;
+        if (growth == 0) {          // G0
+            r = 0.5;
+            g = 0.5;
+            b = 0;
+            itype = 0;
+        } else if (growth < 0.4) {         // G1
+            r = 1;
+            g = 1;
+            b = 0;
+            itype = 1;
+        } else if (growth < 0.6) {  // S
+            r = 1;
+            g = 0.5;
+            b = 0;
+            itype = 2;
+        } else if (growth < 0.9) {  // G2
+            r = 1;
+            g = 0.5;
+            b = 0;
+            itype = 3;
+        } else {                    // M
+            r = 1;
+            g = 0.5;
+            b = 0;
+            itype = 4;
+        }
+        if (USE_CELLTYPE_COLOUR) {
+            qcolor = celltype_colour[itype];
+            r = qcolor.red()/255.;
+            g = qcolor.green()/255.;
+            b = qcolor.blue()/255.;
+            display = display_celltype[itype];
+        }
+        if (!display) continue;
+
+        in_pos_list[tag] = true;
+        if (dbug) {
+            sprintf(msg,"i: %d tag: %d",i,tag);
+            LOG_MSG(msg);
+        }
+        ap = &T_Actor_list[tag];
+        if (!ap->active) {  // Make active an actor with new tag in TCpos_list
+            if (dbug) {
+                sprintf(msg,"adding actor: %d",tag);
+                LOG_MSG(msg);
+            }
+            ren->AddActor(ap->actor);
+            ap->active = true;
+        }
+//        if (USE_CELLTYPE_COLOUR) {
+//            qcolor = celltype_colour[cp.state];
+//            r = qcolor.red()/255.;
+//            g = qcolor.green()/255.;
+//            b = qcolor.blue()/255.;
+////                sprintf(msg,"celltype: %d  r,g,b: %f %f %f",cp.state,r,g,b);
+////                LOG_MSG(msg);
+//        } else {
+//            unpack(cp.state, &r, &g, &b);
+//        }
+
+
+        /*
+        // Cell_cycle
+        if (growth < 1.51) {        // G1
+            r = 0;
+            g = 1;
+            b = 0;
+            qcolor = colour1;
+        } else if (growth < 1.92) { // S
+            r = 1;
+            g = 0.5;
+            b = 0;
+            qcolor = colour2;
+        } else if (growth < 2.11) { // G2
+            r = 1;
+            g = 0.5;
+            b = 0;
+            qcolor = colour2;
+        } else {                    // M
+            r = 1;
+            g = 0.5;
+            b = 0;
+            qcolor = colour2;
+        }
+
+
+        // Wnt_Cyclin
+        if (growth < 0.4) {         // G1
+            r = 1;
+            g = 1;
+            b = 0;
+        } else {                    // S, G2, M
+            r = 1;
+            g = 0.5;
+            b = 0;
+//        } else if (growth < 0.6) {  // S
+//            r = 1;
+//            g = 0.5;
+//            b = 0;
+//        } else if (growth < 0.9) {  // G2
+//            r = 1;
+//            g = 0.5;
+//            b = 0;
+//        } else {                    // M
+//            r = 1;
+//            g = 0.5;
+//            b = 0;
+        }
+        */
+
+        ap->actor->GetProperty()->SetColor(r, g, b);
+        ap->actor->SetScale(cp.diameter);
+//        if (cp.highlight == 0)
+//            ap->actor->GetProperty()->SetOpacity(opacity);
+        ap->actor->SetPosition(cp.x, cp.y, cp.z);
+    }
+    for (int k=0; k<T_Actor_list.length(); k++) {
+        ap = &T_Actor_list[k];
+        if (ap->active && !in_pos_list[k]) {
+            if (dbug) {
+                sprintf(msg,"removing actor: %d",k);
+                LOG_MSG(msg);
+            }
+            ren->RemoveActor(ap->actor);
+            ap->active = false;
+        }
+    }
+}
+
 
 /*
 //-----------------------------------------------------------------------------------------

@@ -50,10 +50,13 @@ namespace Global
     int cell_list[N_CELLINFO*MAX_CELLS];
     int ncell_list;
 
-    bool showingVTK;
-    bool recordingVTK;
-    bool showingFACS;
-    bool recordingFACS;
+    HEXAHEDRON *hex_list;
+    int Ncirc;
+    int Nlong;
+    int Nhex;
+
+    bool showingVTK = false;
+    bool recordingVTK = false;
 
 
 } // namespace Global

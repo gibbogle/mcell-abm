@@ -71,6 +71,10 @@ type XYZ_type
     real(REAL_KIND) :: x, y, z
 end type
 
+type, bind(C) :: point_type
+    real(REAL_KIND) :: x(3)
+end type
+
 type Fparam_type
     real(REAL_KIND) :: a, b, c, e, g
 end type
@@ -82,6 +86,10 @@ type, bind(C) :: field_data
 	real(c_double) :: dVdt
 	real(c_double) :: volume
 	real(c_double) :: conc(MAX_CHEMO+1)	! This needs to agree with the definition in field.h
+end type
+
+type, bind(C) :: hexahedron
+	type(point_type) :: vertex(8)
 end type
 
 integer, parameter :: nflog=10, nfin=11, nfout=12, nfres=13
@@ -112,12 +120,10 @@ logical :: use_TCP = .true.         ! turned off in para_main()
 logical :: use_CPORT1 = .false.
 logical :: stopped, clear_to_send
 logical :: simulation_start, par_zig_init, initialized
-logical :: simulate_rotation
-logical :: simulate_growth
-real(REAL_KIND) :: Fdrag, Mdrag
-real(REAL_KIND) :: Falpha, Malpha
+!logical :: simulate_rotation
+!logical :: simulate_growth
+real(REAL_KIND) :: pressure, tension, Falpha
 real(REAL_KIND) :: Rinitial
-real(REAL_KIND) :: Fjigglefactor, Mjigglefactor
 
 character*(128) :: logfile
 character*(2048) :: logmsg
@@ -532,6 +538,7 @@ end function
 !   The variables are v2D(k): k = 1,..,2*Ncirc*Nlong
 ! 3D case: the circ direction wraps around, and the
 ! left neighbour of icirc=1 is icirc=Ncirc
+! Note: i = icirc, j = ilong
 !	kx = (j-1)*3*Ncirc + (i-1)*3 + 1 for the x value
 !	ky = (j-1)*3*Ncirc + (i-1)*3 + 2 for the y value
 !	kz = (j-1)*3*Ncirc + (i-1)*3 + 3 for the z value
@@ -542,13 +549,12 @@ use, intrinsic :: iso_c_binding
 integer(c_int) :: i, j, nd
 real(c_double) :: v(*), F_L(3), F_R(3), F_D(3), F_U(3), F_P(3), Fsum(3)
 real(REAL_KIND) :: d, factor, R, c(3), cn(3), fx, fy, fz, v_F(3)
-real(REAL_KIND) :: v_L(3), v_R(3), v_P(3), pressure, area, sum
+real(REAL_KIND) :: v_L(3), v_R(3), v_P(3), area, sum
 integer :: kx, ky, kz		! cell (i,j)
 integer :: kxn, kyn, kzn	! neighbour cell (Left, Right, Down or Up)
 integer :: in, ic
 logical :: dbug = .false.
 
-pressure = 0.01
 !R = Rinitial
 sum = 0
 do ic = 1,Ncirc
@@ -587,7 +593,6 @@ if (nd == 2) then
 		else
 			write(*,*) 'Error: F_L: getForce: d = 0'
 			stop
-			F_L = [100,0,0]
 		endif
 		if (nancomponent(F_L)) then
 			write(*,*) 'bad F_L'
@@ -607,7 +612,6 @@ if (nd == 2) then
 		else
 			write(*,*) 'Error: F_R: getForce: d = 0'
 			stop
-			F_R = [-100,0,0]
 		endif
 		if (nancomponent(F_R)) then
 			write(*,*) 'bad F_R'
@@ -634,7 +638,6 @@ if (nd == 2) then
 		else
 			write(*,*) 'Error: F_D: getForce: d = 0'
 			stop
-			F_D = [0,100,0]
 		endif
 		if (nancomponent(F_D)) then
 			write(*,*) 'bad F_D'
@@ -654,7 +657,6 @@ if (nd == 2) then
 		else
 			write(*,*) 'Error: F_U: getForce: d = 0'
 			stop
-			F_U = [0,-100,0]
 		endif
 		if (nancomponent(F_U)) then
 			write(*,*) 'bad F_U'
@@ -729,16 +731,15 @@ else
 	
 	F_D = 0
 	if (j == 1) then			! Bottom boundary constraint
-		fx = 10*fcell(v0(i,1) - v(kx))
-		fy = 10*fcell(v0(i,2) - v(ky))
-		fz = 10*fcell(v0(i,3) - v(kz))
-!		if (i == 1) then
-!			fx = fcell(v(kx)-v0(i,1))
-!			fz = fcell(v(kz)-v0(i,3))
-!		else
-!			fx = 0
-!			fz = 0
-!		endif			
+		if (i == 1) then
+			fx = 10*fcell(v0(i,1) - v(kx))
+			fy = 10*fcell(v0(i,2) - v(ky))
+			fz = 10*fcell(v0(i,3) - v(kz))
+		else
+			fx = 10*fcell(v0(i,1) - v(kx))
+			fy = 10*fcell(v0(i,2) - v(ky))
+			fz = 10*fcell(v0(i,3) - v(kz))
+		endif			
 		F_D = [fx, fy, fz]
 	else		! F_D (i,j-1) -> (i,j)
 		kxn = kx - nd*Ncirc
@@ -779,7 +780,7 @@ else
 			write(*,'(a,2e12.3)') 'd: ',d,factor
 		endif
 	else
-!		F_U = [0.0d0,0.0d0,0.0d0]		! try adding a tension force
+		F_U = [0.0d0,tension,0.0d0]		! try adding a tension force
 !		fx = 10*fcell(v1(i,1) - v(kx))
 !		fy = 10*fcell(v1(i,2) - v(ky))
 !		fz = 10*fcell(v1(i,3) - v(kz))

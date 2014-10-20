@@ -11,9 +11,10 @@
 
 #include "misc.h"
 #include "log.h"
-#include "global.h"
 
 #include "libmcell.h"
+
+#include "global.h"
 
 LOG_USE();
 char msg[2048];
@@ -153,20 +154,24 @@ void ExecThread::run()
 
 	paused = false;
 	execute(&ncpu,const_cast<char *>(infile),&len_infile,const_cast<char *>(outfile),&len_outfile);
-    get_dimensions(&nsteps,&Global::DELTA_T);
+    get_dimensions(&nsteps, &Global::Ncirc, &Global::Nlong, &Global::DELTA_T);
+    if (Global::hex_list) free(Global::hex_list);
+    Global::hex_list = (HEXAHEDRON *)malloc(Global::Ncirc*Global::Nlong*sizeof(HEXAHEDRON));
     emit setupC();
     nsumm_interval = (60)/Global::DELTA_T;   // number of time steps per hour
-//	sprintf(msg,"exthread: nsteps: %d",nsteps);
-//	LOG_MSG(msg);
+    sprintf(msg,"exthread: nsteps: %d Ncirc: %d Nlong: %d DELTA_T: %f nsumm_interval: %d nt_vtk: %d",
+            nsteps,Global::Ncirc,Global::Nlong,Global::DELTA_T,nsumm_interval,Global::nt_vtk);
+    LOG_MSG(msg);
+    nsumm_interval = 100;
 
     Global::conc_nc = 0;
     hour = 0;
 
-    mutex1.lock();
-    get_summary(Global::summaryData);
-    mutex1.unlock();
-    emit summary(hour);		// Emit signal to initialise summary plots
-    summary_done.wait(&mutex3);
+//    mutex1.lock();
+//    get_summary(Global::summaryData);
+//    mutex1.unlock();
+//    emit summary(hour);		// Emit signal to initialise summary plots
+//    summary_done.wait(&mutex3);
 
     for (int i=1; i <= nsteps+1; i++) {
 		bool updated = false;
@@ -188,12 +193,15 @@ void ExecThread::run()
         if (res != 0) {
             LOG_MSG("simulate_step: error: res != 0");
             break;
+        } else {
+//            LOG_MSG("did simulate_step OK");
         }
 
         if (i%nsumm_interval == 0) {
 //          if (i%nsumm_interval == -1) {
             mutex1.lock();
-            get_summary(Global::summaryData);
+//            get_summary(Global::summaryData);
+
 //            conc_nc = 0;
 //            vol_nv = 0;
 //            oxy_nv = 0;
@@ -202,8 +210,8 @@ void ExecThread::run()
 //            get_oxyprob(&oxy_nv, &oxy_dv, oxyProb);
             mutex1.unlock();
             hour++;
-            emit summary(hour);		// Emit signal to update summary plots, at hourly intervals
-            summary_done.wait(&mutex3);
+//            emit summary(hour);		// Emit signal to update summary plots, at hourly intervals
+//            summary_done.wait(&mutex3);
         }
 
         if (stopped) {
@@ -211,8 +219,7 @@ void ExecThread::run()
             break;
         }
         if (i%Global::nt_vtk == 0) {
-//          if (i%nt_vtk == -1) {
-            if (Global::showingVTK != 0) {
+            if (Global::showingVTK) {
 				snapshot();
                 Global::istep = i;
                 sleep(10);
@@ -252,12 +259,9 @@ void ExecThread::wait_to_go()
 //-----------------------------------------------------------------------------------------
 void ExecThread::snapshot()
 {
-    get_scene(&Global::ncell_list,Global::cell_list);
-    if (Global::ncell_list > MAX_CELLS) {
-        LOG_MSG("Error: MAX_CELLS exceeded");
-        exit(1);
-    }
+    get_scene(&Global::Nhex, Global::hex_list);
 //    emit displayF(); // Emit signal to update Field display
+    LOG_MSG("did get_scene, emit display");
     emit display(); // Emit signal to update VTK display
 }
 

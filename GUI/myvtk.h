@@ -28,6 +28,11 @@
 #include <vtkTransform.h>
 #include <vtkTransformPolyDataFilter.h>
 
+#include <vtkPolygon.h>
+#include <vtkCellArray.h>
+#include <vtkPolyData.h>
+#include <vtkCellData.h>
+
 //#include <vtkConfigure.h>
 
 #include <QInputDialog>
@@ -88,6 +93,8 @@ public:
 	void cleanup();
 	void unpack(int x, double *, double *, double *);
 	void renderCells(bool,bool);
+    void process_Mcells();
+    void setPoints(vtkSmartPointer<vtkPoints> p);
     void process_Tcells();
 //    void process_Dcells();
 //    void process_bonds();
@@ -101,6 +108,7 @@ public:
     void recorder();
     void stop();
     void set_celltype_colour(COLOUR_TYPE *, QString str);
+    void makeColors(vtkSmartPointer<vtkUnsignedCharArray> colors, int nV);
 
     QList<CELL_POS > TCpos_list;
 //	QList<CELL_POS > DCpos_list;
@@ -132,6 +140,14 @@ public:
 //	vtkSmartPointer<vtkJPEGWriter> jpgwriter;
     vtkSmartPointer<vtkWindowToImageFilter> w2i;
 
+// For Mcells
+    vtkSmartPointer<vtkPoints> points;
+//    vtkSmartPointer<vtkPolygon> polygon1, polygon2;
+    vtkSmartPointer<vtkCellArray> polygons;
+    vtkSmartPointer<vtkPolyData> polygonPolyData;
+    vtkSmartPointer<vtkPolyDataMapper> hexmapper;
+    vtkSmartPointer<vtkActor> hexactor;
+
 	char msg[2048];
 	double zoomlevel;
     double opacity;
@@ -143,6 +159,7 @@ public:
 	bool paused;
 	bool save_image;
     bool display_celltype[10];
+    bool reset;
 //    QString celltype_colour[10];
     QColor celltype_colour[10];
     QString casename;

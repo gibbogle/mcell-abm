@@ -14,9 +14,8 @@ contains
 !-----------------------------------------------------------------------------------------
 subroutine ReadCellParams(ok)
 logical :: ok
-!real(REAL_KIND) :: t_div_median, t_div_shape 
-real(REAL_KIND) :: hours, deltat
-integer :: nb0, nt_anim, igrow
+real(REAL_KIND) :: hours
+integer :: nb0, nt_anim
 character*(256) :: cellmlfile
 
 open(nfin,file=inputfile)
@@ -26,21 +25,23 @@ open(nfin,file=inputfile)
 !read(nfin,*) t_div_shape
 read(nfin,*) Ncirc
 read(nfin,*) Nlong
-read(nfin,*) dx_init
 read(nfin,*) hours
-!read(nfin,*) deltat
+read(nfin,*) DELTA_T
+read(nfin,*) dx_init
+read(nfin,*) pressure
+read(nfin,*) tension
+read(nfin,*) Falpha
 read(nfin,*) isolver
 read(nfin,*) seed(1)
 read(nfin,*) seed(2)
 read(nfin,*) ncpu_input
-!read(nfin,*) nt_anim
+read(nfin,*) nt_anim
 !read(nfin,*) Fdrag
 !read(nfin,*) Mdrag
-read(nfin,*) Falpha
 !read(nfin,*) Malpha
 !read(nfin,*) Fjigglefactor
 !read(nfin,*) Mjigglefactor
-!read(nfin,*) cellmlfile
+read(nfin,*) cellmlfile
 close(nfin)
 
 !NX = nb0
@@ -49,8 +50,8 @@ close(nfin)
 !simulate_rotation = (Mdrag > 0)
 !simulate_growth = (igrow == 1)
 !DELTA_T = deltat/60 ! sec -> min
-!nsteps = hours*60./DELTA_T
-nsteps = 1
+nsteps = hours*60./DELTA_T
+!nsteps = 10000
 write(logmsg,*) 'isolver: ',isolver
 call logger(logmsg)
 write(logmsg,*) 'hours,nsteps: ',hours,nsteps
@@ -112,15 +113,14 @@ write(nflog,*) 'ncells: ',ncells
 
 do i = 1,Ncirc
 	do j = 1,Nlong
-		write(*,'(2i4,3f8.3)') i,j,mcell(i,j)%centre
+		write(nflog,'(2i4,3f8.3)') i,j,mcell(i,j)%centre
 	enddo
 enddo
-do i = 1,Ncirc
-	do j = 1,Nlong
-		call makeVertices(i,j)
-	enddo
-enddo
-stop
+!do j = 1,Nlong
+!	do i = 1,Ncirc
+!		call makeVertices(i,j)
+!	enddo
+!enddo
 
 !FP1%a = 2
 !FP1%b = 2
@@ -140,6 +140,7 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 ! Base centre = (0,0,0), initial radius = Rinitial
+! Base sits on XZ plane, tube initially oriented parallel to the Y axis
 !-----------------------------------------------------------------------------------------
 subroutine PlaceCells
 integer :: icirc, ilong, kpar=0
@@ -223,17 +224,17 @@ end subroutine
 subroutine fnit(n, xcur, fcur, rpar, ipar, itrmf)
 integer :: n, ipar(*), itrmf
 real(REAL_KIND) :: xcur(*), fcur(*), rpar(*)
-integer :: i, j, nd, k, kd
+integer :: icirc, ilong, nd, k, kd
 real(REAL_KIND) :: F(3)
 
 !write(*,*) 'fnit'
 nd = Ndim
-do j = 1,Nlong
-	do i = 1,Ncirc
-		call getForce(nd,xcur,i,j,F)
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
+		call getForce(nd,xcur,icirc,ilong,F)
 !		write(*,'(a,2i4,3e12.3)') 'i,j,F: ',i,j,F
 		do kd = 1,nd
-			k = (j-1)*nd*Ncirc + (i-1)*nd + kd 
+			k = (ilong-1)*nd*Ncirc + (icirc-1)*nd + kd 
 			fcur(k) = F(kd)
 		enddo
 	enddo
@@ -271,15 +272,15 @@ kdmax = 20
 nwork = n*(kdmax+5)+kdmax*(kdmax+3)
 allocate(rwork(nwork))
 input = 0
-ftol = 1.0d-5
-stptol = 1.0d-5
+ftol = 1.0d-6
+stptol = 1.0d-6
 call nitsol(n, v, fnit, jacv, ftol, stptol, input, info, rwork, rpar, ipar, iterm, ddot, dnrm2)
 !write(*,*) 'v'
 !write(*,'(10f7.4)') v(1:n)
 !write(*,*) 'f'
 !write(*,'(10f7.4)') rwork(1:n)
 deallocate(rwork)
-write(*,*) 'nitsolved: iterm: ',iterm
+!write(nflog,*) 'nitsolved: iterm: ',iterm
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -293,40 +294,39 @@ end subroutine
 
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
-subroutine get_scene(nEC_list,EC_list) BIND(C)
+subroutine get_scene(Nhex, hex_list) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: get_scene
 use, intrinsic :: iso_c_binding
-integer(c_int) :: nEC_list 
-real(c_double) :: EC_list(*)
-type(mcell_type), pointer :: p
+integer(c_int) :: Nhex
+type(hexahedron) :: hex_list(*)
+integer :: icirc, ilong, k
+!type(mcell_type), pointer :: p
 !real(REAL_KIND) :: a, b, vx, vy, vz, s, c, s2
-integer :: kcell, j, ix, iy
+!integer :: kcell, j, ix, iy
 
-nEC_list = ncells
-!do kcell = 1,nEC_list
-kcell = 0
-do ix = 1,Ncirc
-do iy = 1,Nlong
-    p => mcell(ix,iy)
-    kcell = kcell + 1
-    j = (kcell-1)*12
-!    a = p%a
-!    b = p%b
-!    vx = p%orient(1)
-!    vy = p%orient(2)
-!    vz = p%orient(3)
-!    s2 = vy*vy+vz*vz
-!    s = sqrt(s2);	! sin(theta)
-!    c = vx;			! cos(theta)
-    EC_list(j+1:j+3) = p%centre
-    EC_list(j+4:j+12) = 0
-!    EC_list(j+4:j+12) = (/ a*c, a*vy, a*vz, &
-!                          -b*vy, b*(c+(1-c)*vz*vz/s2), -b*(1-c)*vy*vz/s2, &
-!                          -b*vz, -b*(1-c)*vy*vz/s2, b*(c+(1-c)*vy*vy/s2) /)
+Nhex = 0
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
+		Nhex = Nhex + 1
+		do k = 1,8
+			hex_list(Nhex)%vertex(k)%x(:) = mcell(icirc,ilong)%vert(k,:)
+			if (ilong == 1 .and. icirc <= 2) then
+				write(nflog,'(3i4,3f8.4)') ilong,icirc,k,hex_list(Nhex)%vertex(k)%x(:)
+			endif
+		enddo
+	enddo
 enddo
-enddo
-!write(logmsg,*) 'get_scene: ',istep,cmax
-!call logger(logmsg)
+!nEC_list = ncells
+!kcell = 0
+!do ix = 1,Ncirc
+!do iy = 1,Nlong
+!    p => mcell(ix,iy)
+!    kcell = kcell + 1
+!    j = (kcell-1)*12
+!    EC_list(j+1:j+3) = p%centre
+!    EC_list(j+4:j+12) = 0
+!enddo
+!enddo
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -357,15 +357,18 @@ subroutine simulate_step(res) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: simulate_step  
 use, intrinsic :: iso_c_binding
 integer(c_int) :: res
-integer :: it, nt, i, k, kd, j
+integer :: it, nt, k, kd, icirc, ilong
 real(REAL_KIND) :: dt, obj, width(3)
 !integer :: kcell
 real(REAL_KIND), pointer :: pv(:)
 logical :: ok
-real(REAL_KIND) :: delta = 0.02
+real(REAL_KIND) :: delta = 0.01
+
+res = 0
+call logger('simulate_step')
 
 istep = istep + 1
-if (mod(istep,1) == 0) then
+if (mod(istep,10) == 0) then
 	write(logmsg,'(a,2i6,2f10.3)') 'step, ncells, overlap (average, max): ',istep, ncells, overlap_average, overlap_max
 	call logger(logmsg)
 endif
@@ -377,12 +380,12 @@ else
 	pv => v3D
 endif
 k = 0
-do j = 1,Nlong
-	do i = 1,Ncirc
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
 !	write(*,*) mcell(i,j)%centre
 		do kd = 1,Ndim
 			k = k+1
-			pv(k) = mcell(i,j)%centre(kd)
+			pv(k) = mcell(icirc,ilong)%centre(kd)
 		enddo
 !		k = k+1
 !		pv(k) = mcell(i,j)%centre(2)
@@ -390,33 +393,52 @@ do j = 1,Nlong
 !			k = k+1
 !			pv(k) = mcell(i,j)%centre(3)
 !		endif
-		mcell(i,j)%width(1) = (1 + delta)*mcell(i,j)%width(1)
-		mcell(i,j)%width(2) = (1 + delta)*mcell(i,j)%width(2)
-		mcell(i,j)%width(3) = (1 + delta)*mcell(i,j)%width(3)
+		if (istep < 1000) then
+			mcell(icirc,ilong)%width(1) = (1 + delta)*mcell(icirc,ilong)%width(1)
+			mcell(icirc,ilong)%width(2) = (1 + delta)*mcell(icirc,ilong)%width(2)
+			mcell(icirc,ilong)%width(3) = (1 + delta)*mcell(icirc,ilong)%width(3)
+		endif
 !		write(*,'(4i4,2f8.4)') i,j,k-1,k,v2D(k-1),v2D(k)	!,mcell(i,j)%centre(1:2)
 	enddo
 enddo
-write(*,*) 'v3D'
-write(*,'(3f8.3)') v3D
+!write(*,*) 'v3D'
+!write(*,'(3f8.3)') v3D
 
+write(nflog,*)
+write(nflog,*) 'Centres'
 call nitsolve(pv,obj)
 k = 0
-do j = 1,Nlong
-	do i = 1,Ncirc
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
 		do kd = 1,Ndim
 			k = k+1
-			width(1) = pv(k) - mcell(i,j)%centre(kd)
-			mcell(i,j)%centre(kd) = pv(k)
+!			width(1) = pv(k) - mcell(i,j)%centre(kd)
+			mcell(icirc,ilong)%centre(kd) = pv(k)
 		enddo
 !		k = k+1
 !		width(2) = p(k) - mcell(i,j)%centre(2)
 !		mcell(i,j)%centre(2) = p(k)
-		write(*,'(2i4,6f8.4)') i,j,mcell(i,j)%centre(1:Ndim)	!,width(1:Ndim)
+		write(nflog,'(2i4,6f8.4)') ilong,icirc,mcell(icirc,ilong)%centre(1:Ndim)	!,width(1:Ndim)
 	enddo
 enddo
+
+!call logger('makeVertices')
+!write(nflog,*) 'makeVertices'
+write(nflog,*) 'Vertices'
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
+		call makeVertices(icirc,ilong)
+		do k = 1,8
+			write(nflog,'(3i4,3f8.4)') ilong,icirc,k,mcell(icirc,ilong)%vert(k,:)
+		enddo
+	enddo
+enddo
+
+!call logger('did makeVertices')
+!write(nflog,*) 'did makeVertices'
+
 !obj = f_objective(v2D)
 !write(*,*) 'obj: ',obj
-stop
 
 !if (simulate_growth) then
 !	call Grower(ok)
@@ -454,8 +476,11 @@ if (ok) then
 else
     res = 1
 endif
+!call logger('end simulate_step')
 end subroutine
 
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
 subroutine FixCentre
 real(REAL_KIND) :: origin(3)
 integer :: kcell
@@ -469,15 +494,18 @@ do kcell = 1,ncells
     cell_list(kcell)%centre = cell_list(kcell)%centre - origin
 enddo
 end subroutine
+
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
-subroutine get_dimensions(nsteps_dim, deltat) BIND(C)
+subroutine get_dimensions(NstepsGUI, NcircGUI, NlongGUI, deltat) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: get_dimensions
 use, intrinsic :: iso_c_binding
-integer(c_int) :: nsteps_dim
+integer(c_int) :: NstepsGUI, NcircGUI, NlongGUI
 real(c_double) :: deltat
 
-nsteps_dim = nsteps
+NstepsGUI = nsteps
+NcircGUI = Ncirc
+NlongGUI = Nlong
 deltat = DELTA_T
 
 end subroutine

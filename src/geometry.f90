@@ -92,6 +92,58 @@ implicit none
 contains
 
 !-------------------------------------------------------------------------------------
+! Make adjacent cell vertices coincident.  
+!                   inext    icirc
+! Bottom vertices:  2   6    1   5   1
+! Top vertices:     3   7    4   8   Nlong
+! Middle vertices:  3   7    4   8   ilong
+!                   2   6    1   5   ilong + 1
+!                  out  in  out  in
+!-------------------------------------------------------------------------------------
+subroutine smoother
+integer :: icirc, ilong, inext, k
+real(REAL_KIND) :: v(4,3), vave(3)
+
+do ilong = 0,Nlong
+	do icirc = 1,Ncirc
+		inext = icirc - 1
+		if (inext == 0) inext = Ncirc
+		if (ilong == 0) then			! bottom vertices, 2 cells
+			do k = 1,5,4
+				v(1,:) = mcell(icirc,1)%vert(k,:)
+				v(2,:) = mcell(inext,1)%vert(k+1,:)
+				vave = (v(1,:) + v(2,:))/2
+				mcell(icirc,1)%vert(k,:) = vave
+				mcell(inext,1)%vert(k+1,:) = vave
+			enddo
+		elseif (ilong == Nlong) then	! top vertices, 2 cells
+			do k = 4,8,4
+				v(1,:) = mcell(icirc,Nlong)%vert(k,:)
+				v(2,:) = mcell(inext,Nlong)%vert(k-1,:)
+				vave = (v(1,:) + v(2,:))/2
+				mcell(icirc,Nlong)%vert(k,:) = vave
+				mcell(inext,Nlong)%vert(k-1,:) = vave
+			enddo		
+		else							! middle vertices, 4 cells
+			do k = 4,8,4
+				v(1,:) = mcell(icirc,ilong)%vert(k,:)
+				v(2,:) = mcell(inext,ilong)%vert(k-1,:)
+				v(3,:) = mcell(icirc,ilong+1)%vert(k-3,:)
+				v(4,:) = mcell(inext,ilong+1)%vert(k-2,:)
+				vave = (v(1,:) + v(2,:) + v(3,:) + v(4,:))/4
+				mcell(icirc,ilong)%vert(k,:) = vave
+				mcell(inext,ilong)%vert(k-1,:) = vave
+				mcell(icirc,ilong+1)%vert(k-3,:) = vave
+				mcell(inext,ilong+1)%vert(k-2,:) = vave
+			enddo
+		endif
+	enddo	
+enddo
+
+end subroutine
+
+!-------------------------------------------------------------------------------------
+! i = icirc, j = ilong
 !-------------------------------------------------------------------------------------
 subroutine makeVertices(i,j)
 integer :: i,j
@@ -100,6 +152,7 @@ real(REAL_KIND) :: p_M_L(3), p_M_R(3), p_M_D(3), p_M_U(3), p_M_O(3), p_M_I(3)
 real(REAL_KIND) :: v_N(3), a(6), b(6), c(6), d(6), p_T(3,3), v1(3), v2(3), va, w
 real(REAL_KIND) :: AV(3,3), rhs(3), sol(3)
 integer :: k, row, kv(8,3)
+logical :: dbug = .false.
 
 p_O = mcell(i,j)%centre
 if (i > 1) then
@@ -125,7 +178,7 @@ v_N = p_L - p_O
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_L: ',k,p_M_L
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_L: ',k,p_M_L
 d(k) = dot_product(p_M_L,v_N)
 k = 2	! line OR
 p_M_R = (p_O + p_R)/2
@@ -133,7 +186,7 @@ v_N = p_R - p_O
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_R: ',k,p_M_R
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_R: ',k,p_M_R
 d(k) = dot_product(p_M_R,v_N)
 k = 3	! line OD
 if (j > 1) then
@@ -146,7 +199,7 @@ endif
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_D: ',k,p_M_D
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_D: ',k,p_M_D
 d(k) = dot_product(p_M_D,v_N)
 k = 4	! line OU
 if (j < Nlong) then
@@ -159,47 +212,49 @@ endif
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_U: ',k,p_M_U
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_U: ',k,p_M_U
 d(k) = dot_product(p_M_U,v_N)
 
 v1 = p_M_R - p_M_L
 v2 = p_M_U - p_M_D
-!write(*,'(a,3f8.3)') 'v1: ',v1
-!write(*,'(a,3f8.3)') 'v2: ',v2
-!write(*,'(a,f8.4)') 'v1.v2: ',dot_product(v1,v2)
+if (dbug) write(*,'(a,3f8.3)') 'v1: ',v1
+if (dbug) write(*,'(a,3f8.3)') 'v2: ',v2
+if (dbug) write(*,'(a,f8.4)') 'v1.v2: ',dot_product(v1,v2)
 call cross_product(v1,v2,v_N)
-!write(*,'(a,3f8.3)') 'v_N: ',v_N
+if (dbug) write(*,'(a,3f8.3)') 'v_N: ',v_N
 va = sqrt(dot_product(v_N,v_N))
 v_N = v_N/va
-!write(*,'(a,3f8.3)') 'v_N: ',v_N
+if (dbug) write(*,'(a,3f8.3)') 'v_N: ',v_N
 w = mcell(i,j)%width(3)
-!write(*,'(a,f8.3)') 'w: ',w
+if (dbug) write(*,'(a,f8.3)') 'w: ',w
 k=5		! (xm,ym,zm) = O + (w/2)N/|N| is outside
 p_M_O = p_O + (w/2)*v_N
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_O: ',k,p_M_O
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_O: ',k,p_M_O
 d(k) = dot_product(p_M_O,v_N)
 k=6		! (xm,ym,zm) = O - (w/2)N/|N| is inside
 p_M_I = p_O - (w/2)*v_N
 a(k) = v_N(1)
 b(k) = v_N(2)
 c(k) = v_N(3)
-!write(*,'(a,i4,3f8.4)') 'p_M_I: ',k,p_M_I
+if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_I: ',k,p_M_I
 d(k) = dot_product(p_M_I,v_N)
 
-write(*,*) 'i,j: ',i,j
-!write(*,'(a,3f8.4)') 'p_O: ',p_O
-!write(*,'(a,3f8.4)') 'p_L: ',p_L
-!write(*,'(a,3f8.4)') 'p_R: ',p_R
-!write(*,'(a,3f8.4)') 'p_D: ',p_D
-!write(*,'(a,3f8.4)') 'p_U: ',p_U
-!write(*,'(a,3f8.4)') 'p_LD: ',p_LD
-!write(*,'(a,3f8.4)') 'p_RD: ',p_RD
-!do k = 1,6
-!	write(*,'(a,i2,4f8.4)') 'k,a,b,c,d: ', k,a(k),b(k),c(k),d(k)
-!enddo
+if (dbug) then
+	write(*,*) 'i,j: ',i,j
+	write(*,'(a,3f8.4)') 'p_O: ',p_O
+	write(*,'(a,3f8.4)') 'p_L: ',p_L
+	write(*,'(a,3f8.4)') 'p_R: ',p_R
+	write(*,'(a,3f8.4)') 'p_D: ',p_D
+	write(*,'(a,3f8.4)') 'p_U: ',p_U
+	write(*,'(a,3f8.4)') 'p_LD: ',p_LD
+	write(*,'(a,3f8.4)') 'p_RD: ',p_RD
+	do k = 1,6
+		write(*,'(a,i2,4f8.4)') 'k,a,b,c,d: ', k,a(k),b(k),c(k),d(k)
+	enddo
+endif
 
 ! The next step is to deduce the 8 intersection points of the 6 planes: L, R, U, D, O, I
 ! Number the vertices anticlockwise starting from outside.
@@ -239,8 +294,9 @@ do k = 1,8
 	enddo
 	call solveNxN(3,AV,rhs,sol)
 	mcell(i,j)%vert(k,:) = sol
-	write(*,'(a,i2,3f8.3)') 'vertex: ',k,sol
+	if (dbug) write(*,'(a,i2,3f8.3)') 'vertex: ',k,sol
 enddo
+call smoother
 end subroutine
 
 !-------------------------------------------------------------------------------------
