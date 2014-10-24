@@ -5,19 +5,19 @@ Params::Params()
 {
     PARAM_SET params[] = {
 
-{"NCIRC", 10, 0, 50,
+{"NCIRC", 20, 0, 50,
 "Ncirc",
 "Number of circumferential cells"},
 
-{"NLONG", 10, 0, 50,
+{"NLONG", 40, 0, 50,
 "Nlong",
 "Number of longitudinal cells"},
 
-{"NHOURS", 1.0, 0.0, 0.0,
+{"NHOURS", 20.0, 0.0, 0.0,
 "Number of hours",
 "Length of the simulation.(hours)"},
 
-{"DELTA_T", 30, 0, 0,
+{"DELTA_T", 6, 0, 0,
 "Time step",
 "Time step (mins)."},
 
@@ -25,17 +25,25 @@ Params::Params()
 "Cell size",
 "Cell size."},
 
-{"PRESSURE", 0.02, 0, 0,
+{"PRESSURE", 0.0, 0, 0,
 "Pressure",
 "Internal pressure (cardiac jelly)"},
 
-{"TENSION", 0.05, 0, 0,
+{"TENSION", 0.0, 0, 0,
 "Tension",
 "Tension at free vertices"},
 
-{"FALPHA", 1, 0, 0,
-"Force constant",
-"Force constant"},
+{"FALPHA_AXIAL", 1, 0, 0,
+"Axial force constant",
+"Axial force constant"},
+
+{"FALPHA_SHEAR", 0.01, 0, 0,
+"Shear force constant",
+"Shear force constant"},
+
+{"FALPHA_BEND", 0.001, 0, 0,
+"Bending force constant",
+"Bening force constant"},
 
 {"SOLVER", 0, 0, 0,
 "Solver #",

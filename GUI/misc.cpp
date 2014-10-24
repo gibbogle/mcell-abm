@@ -162,7 +162,6 @@ void ExecThread::run()
     sprintf(msg,"exthread: nsteps: %d Ncirc: %d Nlong: %d DELTA_T: %f nsumm_interval: %d nt_vtk: %d",
             nsteps,Global::Ncirc,Global::Nlong,Global::DELTA_T,nsumm_interval,Global::nt_vtk);
     LOG_MSG(msg);
-    nsumm_interval = 100;
 
     Global::conc_nc = 0;
     hour = 0;
@@ -199,7 +198,7 @@ void ExecThread::run()
 
         if (i%nsumm_interval == 0) {
 //          if (i%nsumm_interval == -1) {
-            mutex1.lock();
+//            mutex1.lock();
 //            get_summary(Global::summaryData);
 
 //            conc_nc = 0;
@@ -208,9 +207,9 @@ void ExecThread::run()
 //            get_concdata(&conc_nc, &conc_dx, concData);
 //            get_volprob(&vol_nv, &vol_v0, &vol_dv, volProb);
 //            get_oxyprob(&oxy_nv, &oxy_dv, oxyProb);
-            mutex1.unlock();
+//            mutex1.unlock();
             hour++;
-//            emit summary(hour);		// Emit signal to update summary plots, at hourly intervals
+            emit summary(hour);		// Emit signal to update summary plots, at hourly intervals
 //            summary_done.wait(&mutex3);
         }
 
@@ -261,7 +260,7 @@ void ExecThread::snapshot()
 {
     get_scene(&Global::Nhex, Global::hex_list);
 //    emit displayF(); // Emit signal to update Field display
-    LOG_MSG("did get_scene, emit display");
+//    LOG_MSG("did get_scene, emit display");
     emit display(); // Emit signal to update VTK display
 }
 

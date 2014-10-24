@@ -56,6 +56,7 @@ public:
 //    void wait_to_go();
     int ncpu;
 	int nsteps;
+    double DELTA_T;
 	bool paused;
 	bool stopped;
     QMutex mutex1, mutex2, mutex3;

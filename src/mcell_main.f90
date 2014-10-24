@@ -55,6 +55,7 @@ do i = 1, cnt
     endif
 end do
 
+do irun = 1,2
 	inbuflen = len(infile)
 	outbuflen = len(outfile)
 	write(*,*) 'call execute'
@@ -82,4 +83,5 @@ end do
 !	!call cpu_time(t2)
 !	t2 = wtime()
 !	write(*,*) 'time: ',t2-t1
+enddo
 end 

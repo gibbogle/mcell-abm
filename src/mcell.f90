@@ -2,13 +2,11 @@
 module mcell_mod
 use global
 use geometry
-use newton
+!use newton
 
 implicit none
 
 contains
-
-
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
@@ -30,8 +28,10 @@ read(nfin,*) DELTA_T
 read(nfin,*) dx_init
 read(nfin,*) pressure
 read(nfin,*) tension
-read(nfin,*) Falpha
-read(nfin,*) isolver
+read(nfin,*) Falpha_axial
+read(nfin,*) Falpha_shear
+read(nfin,*) Falpha_bend
+read(nfin,*) nitsolver
 read(nfin,*) seed(1)
 read(nfin,*) seed(2)
 read(nfin,*) ncpu_input
@@ -52,12 +52,12 @@ close(nfin)
 !DELTA_T = deltat/60 ! sec -> min
 nsteps = hours*60./DELTA_T
 !nsteps = 10000
-write(logmsg,*) 'isolver: ',isolver
+write(logmsg,*) 'nitsolver: ',nitsolver
 call logger(logmsg)
-write(logmsg,*) 'hours,nsteps: ',hours,nsteps
+write(logmsg,*) 'hours,nsteps: ',hours,nsteps 
 call logger(logmsg)
 ok = .true.
-end subroutine
+end subroutine 
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
@@ -144,13 +144,15 @@ end subroutine
 !-----------------------------------------------------------------------------------------
 subroutine PlaceCells
 integer :: icirc, ilong, kpar=0
+integer :: n, kdmax, nwork
 real(REAL_KIND) :: x, y, z
 real(REAL_KIND) :: dtheta, theta, w
 
 if (allocated(mcell)) then
 	deallocate(mcell)
-	deallocate(v0)
-	deallocate(v1)
+	deallocate(mcell0)
+	deallocate(vbase)
+!	deallocate(v1)
 endif
 if (allocated(v2D)) then
 	deallocate(v2D)
@@ -162,8 +164,9 @@ if (allocated(Jac)) then
 	deallocate(Jac)
 endif
 allocate(mcell(Ncirc,Nlong))
-allocate(v0(Ncirc,3))
-allocate(v1(Ncirc,3))
+allocate(mcell0(Ncirc,Nlong))
+allocate(vbase(Ncirc,3))
+!allocate(v1(Ncirc,3))
 if (Ndim == 2) then
 	allocate(v2D(2*Ncirc*Nlong))
 	allocate(Jac(2*Ncirc*Nlong,2*Ncirc*Nlong))
@@ -171,8 +174,20 @@ else
 	allocate(v3D(3*Ncirc*Nlong))
 	allocate(Jac(3*Ncirc*Nlong,3*Ncirc*Nlong))
 endif
+! nitsol work space
+if (allocated(rwork)) then
+	deallocate(rwork)
+endif
+n = Ndim*Ncirc*Nlong
+kdmax = 30	! was 20
+nwork = n*(kdmax+5)+kdmax*(kdmax+3) + 1000	! just for good luck
+allocate(rwork(nwork))
 
-! circumference = 2.PI.Rinitial = Ncirc.dx_init
+if (allocated(fb)) then
+	deallocate(fb)
+endif
+allocate(fb(n))
+
 z = 0
 if (Ndim == 2) then
 	! 2D
@@ -183,7 +198,6 @@ if (Ndim == 2) then
 			y = (ilong-1)*w
 			mcell(icirc,ilong)%centre = [x,y,z]
 			mcell(icirc,ilong)%width = [w, w, w]
-!			mcell(icirc,ilong)%width = [w, w, w]
 		enddo
 	enddo
 else
@@ -199,16 +213,20 @@ else
 			y = (ilong-1)*w
 			mcell(icirc,ilong)%centre = [x,y,z]
 			mcell(icirc,ilong)%width = [w, w, w]
-!			mcell(icirc,ilong)%width = [w, w, w]
 		enddo
 	enddo
 endif
 mcell%volume = w**3
-mcell%vtarget = mcell%volume
 Ncells = Ncirc*Nlong
 do icirc = 1,Ncirc
-	v0(icirc,:) = mcell(icirc,1)%centre
-	v1(icirc,:) = mcell(icirc,Nlong)%centre
+	vbase(icirc,:) = mcell(icirc,1)%centre
+enddo
+do icirc = 1,Ncirc
+	do ilong = 1,Nlong
+		mcell0(icirc,ilong)%centre = mcell(icirc,ilong)%centre
+		mcell0(icirc,ilong)%volume = mcell(icirc,ilong)%volume
+		mcell0(icirc,ilong)%width = mcell(icirc,ilong)%width
+	enddo
 enddo
 end subroutine
 
@@ -224,22 +242,32 @@ end subroutine
 subroutine fnit(n, xcur, fcur, rpar, ipar, itrmf)
 integer :: n, ipar(*), itrmf
 real(REAL_KIND) :: xcur(*), fcur(*), rpar(*)
-integer :: icirc, ilong, nd, k, kd
-real(REAL_KIND) :: F(3)
+integer :: icirc, ilong, nd, k, kd, nvars, i
+real(REAL_KIND) :: F(3), fmax(3)
 
-!write(*,*) 'fnit'
+nd = Ndim
+nvars = nd*Ncirc*Nlong
+if (n /= nvars) then
+	write(*,*) 'ERROR: fnit: n != nvars: ',n,nvars
+	stop
+endif
+if (istep > nramp) then
+	fb = 0
+endif
 nd = Ndim
 do ilong = 1,Nlong
 	do icirc = 1,Ncirc
 		call getForce(nd,xcur,icirc,ilong,F)
-!		write(*,'(a,2i4,3e12.3)') 'i,j,F: ',i,j,F
 		do kd = 1,nd
 			k = (ilong-1)*nd*Ncirc + (icirc-1)*nd + kd 
 			fcur(k) = F(kd)
 		enddo
 	enddo
 enddo
-!write(*,'(10f7.4)') fcur(1:20)
+if (istep > nramp) then
+	call getBendForces(xcur,fb)
+	fcur(1:n) = fcur(1:n) + fb
+endif
 itrmf = 0
 end subroutine
 
@@ -259,28 +287,70 @@ implicit none
 external ddot
 external dnrm2
 real(REAL_KIND) :: ddot, dnrm2
-real(REAL_KIND) :: v(:)
-integer :: n, nd, k, i, j, kd
+real(REAL_KIND) :: v(*)
+integer :: n, k, i, j, kd
 real(REAL_KIND) :: res, F(3)
-real(REAL_KIND), allocatable :: rwork(:)
-integer :: input(11), info(6), iterm, kdmax, nwork, ipar(100)
-real(REAL_KIND) :: ftol, stptol, rpar(100)
+integer :: input(10), info(6), iterm, ipar(1000)
+real(REAL_KIND) :: ftol, stptol, rpar(1000)
 
-nd = Ndim
-n = nd*Ncirc*Nlong
-kdmax = 20
-nwork = n*(kdmax+5)+kdmax*(kdmax+3)
-allocate(rwork(nwork))
+n = Ndim*Ncirc*Nlong
+!kdmax = 20
+!nwork = n*(kdmax+5)+kdmax*(kdmax+3) + 1000	! just for good luck
+!allocate(rwork(nwork))
+rwork = 0
 input = 0
-ftol = 1.0d-6
-stptol = 1.0d-6
+info = 0
+ipar = 0
+rpar = 0
+input(3) = nitsolver
+ftol = 2.0d-5
+stptol = 2.0d-5
 call nitsol(n, v, fnit, jacv, ftol, stptol, input, info, rwork, rpar, ipar, iterm, ddot, dnrm2)
 !write(*,*) 'v'
 !write(*,'(10f7.4)') v(1:n)
 !write(*,*) 'f'
 !write(*,'(10f7.4)') rwork(1:n)
-deallocate(rwork)
+!deallocate(rwork)
 !write(nflog,*) 'nitsolved: iterm: ',iterm
+end subroutine
+
+!--------------------------------------------------------------------------------
+! Programmed test case for cell shape change.
+! Case 1:
+! width(2) at x = Rinitial  -> 1.5*width0
+!          at x = -Rinitial -> 0.5*width0
+! as istep -> nstep_var
+!--------------------------------------------------------------------------------
+subroutine updateWidths
+integer :: ilong, icirc, ivar
+real(REAL_KIND) :: x, y, ymid, tfactor, xfactor, yfactor, delta
+real(REAL_KIND) :: delta_max = 0.5
+integer :: nstep_start = 10
+integer :: nstep_var
+
+if (istep <= nstep_start) return
+nstep_var = (delta_max/0.1)*40.		! sets a valid rate
+ivar = istep - nstep_start
+ymid = (1 + Nlong)/2.
+if (ivar <= nstep_var) then
+	tfactor = (ivar-1.0)/(nstep_var - 1.0)
+else
+	tfactor = 1.0
+endif
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
+		x = mcell0(icirc,ilong)%centre(1)
+		xfactor = x/Rinitial
+		y = mcell0(icirc,ilong)%centre(2)
+		yfactor = 1 - abs(ilong - ymid)/(ymid-1)
+		delta = tfactor*xfactor*yfactor*delta_max
+		mcell(icirc,ilong)%width(2) = (1 + delta)*mcell0(icirc,ilong)%width(2)
+		if (delta < 0) then		! adjust width(1) and width(3) to preserve volume
+			mcell(icirc,ilong)%width(1) = mcell0(icirc,ilong)%width(1)/sqrt(1 + delta)
+			mcell(icirc,ilong)%width(3) = mcell0(icirc,ilong)%width(3)/sqrt(1 + delta)
+		endif
+	enddo
+enddo
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -357,23 +427,21 @@ subroutine simulate_step(res) BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: simulate_step  
 use, intrinsic :: iso_c_binding
 integer(c_int) :: res
-integer :: it, nt, k, kd, icirc, ilong
+integer :: ires, it, nt, k, kd, icirc, ilong
 real(REAL_KIND) :: dt, obj, width(3)
 !integer :: kcell
 real(REAL_KIND), pointer :: pv(:)
 logical :: ok
-real(REAL_KIND) :: delta = 0.01
 
 res = 0
-call logger('simulate_step')
-
 istep = istep + 1
 if (mod(istep,10) == 0) then
-	write(logmsg,'(a,2i6,2f10.3)') 'step, ncells, overlap (average, max): ',istep, ncells, overlap_average, overlap_max
+	write(logmsg,*) 'simulate_step: ',istep
 	call logger(logmsg)
 endif
 ok = .true.
 
+call updateWidths
 if (Ndim == 2) then
 	pv => v2D
 else
@@ -382,30 +450,24 @@ endif
 k = 0
 do ilong = 1,Nlong
 	do icirc = 1,Ncirc
-!	write(*,*) mcell(i,j)%centre
 		do kd = 1,Ndim
 			k = k+1
-			pv(k) = mcell(icirc,ilong)%centre(kd)
+			pv(k) = mcell(icirc,ilong)%centre(kd)		! initial guess
 		enddo
-!		k = k+1
-!		pv(k) = mcell(i,j)%centre(2)
-!		if (Ndim == 3) then
-!			k = k+1
-!			pv(k) = mcell(i,j)%centre(3)
-!		endif
-		if (istep < 1000) then
-			mcell(icirc,ilong)%width(1) = (1 + delta)*mcell(icirc,ilong)%width(1)
-			mcell(icirc,ilong)%width(2) = (1 + delta)*mcell(icirc,ilong)%width(2)
-			mcell(icirc,ilong)%width(3) = (1 + delta)*mcell(icirc,ilong)%width(3)
-		endif
+!		mcell(icirc,ilong)%width(1) = (1 + delta)*mcell(icirc,ilong)%width(1)	! target widths
+!		mcell(icirc,ilong)%width(2) = (1 + delta)*mcell(icirc,ilong)%width(2)
+!		mcell(icirc,ilong)%width(3) = (1 + delta)*mcell(icirc,ilong)%width(3)
 !		write(*,'(4i4,2f8.4)') i,j,k-1,k,v2D(k-1),v2D(k)	!,mcell(i,j)%centre(1:2)
 	enddo
 enddo
+!vbase = (1 + delta)*vbase	! grow the base only if width(1) and width(2) are growing
+
 !write(*,*) 'v3D'
 !write(*,'(3f8.3)') v3D
 
-write(nflog,*)
-write(nflog,*) 'Centres'
+!write(nflog,*)
+!write(nflog,*) 'Centres'
+!call newtonsolve(pv,ires)
 call nitsolve(pv,obj)
 k = 0
 do ilong = 1,Nlong
@@ -418,81 +480,28 @@ do ilong = 1,Nlong
 !		k = k+1
 !		width(2) = p(k) - mcell(i,j)%centre(2)
 !		mcell(i,j)%centre(2) = p(k)
-		write(nflog,'(2i4,6f8.4)') ilong,icirc,mcell(icirc,ilong)%centre(1:Ndim)	!,width(1:Ndim)
+!		write(nflog,'(2i4,6f8.4)') ilong,icirc,mcell(icirc,ilong)%centre(1:Ndim)	!,width(1:Ndim)
 	enddo
 enddo
 
 !call logger('makeVertices')
 !write(nflog,*) 'makeVertices'
-write(nflog,*) 'Vertices'
+!write(nflog,*) 'Vertices'
 do ilong = 1,Nlong
 	do icirc = 1,Ncirc
 		call makeVertices(icirc,ilong)
-		do k = 1,8
-			write(nflog,'(3i4,3f8.4)') ilong,icirc,k,mcell(icirc,ilong)%vert(k,:)
-		enddo
+!		do k = 1,8
+!			write(nflog,'(3i4,3f8.4)') ilong,icirc,k,mcell(icirc,ilong)%vert(k,:)
+!		enddo
 	enddo
 enddo
 
-!call logger('did makeVertices')
-!write(nflog,*) 'did makeVertices'
-
-!obj = f_objective(v2D)
-!write(*,*) 'obj: ',obj
-
-!if (simulate_growth) then
-!	call Grower(ok)
-!endif
-!if (.not.ok) then
-!	res = 1
-!	return
-!endif
-!if (isolver == EXPLICIT_SOLVER) then
-!	nt = 10
-!	dt = DELTA_T/nt
-!	do it = 1,nt
-!		call SumContacts(ok)
-!		if (.not.ok) then
-!			res = 1
-!			return
-!		endif
-!		call Mover(dt)
-!	enddo
-!	ok = .true.
-!else
-!    if (isolver == SLOW_EULER_SOLVER .or. isolver == FAST_EULER_SOLVER) then
-!	    nt = 1
-!        dt = DELTA_T/nt
-!	    call solver(dt,nt,ok)
-!    elseif (isolver == RKF45_SOLVER) then
-!	    nt = 10
-!	    dt = DELTA_T/nt
-!	    call solver(dt,nt,ok)
-!    endif
-!    call FixCentre
-!endif
 if (ok) then
     res = 0
 else
     res = 1
 endif
 !call logger('end simulate_step')
-end subroutine
-
-!--------------------------------------------------------------------------------
-!--------------------------------------------------------------------------------
-subroutine FixCentre
-real(REAL_KIND) :: origin(3)
-integer :: kcell
-
-origin = 0
-do kcell = 1,ncells
-    origin = origin + cell_list(kcell)%centre
-enddo
-origin = origin/ncells
-do kcell = 1,ncells
-    cell_list(kcell)%centre = cell_list(kcell)%centre - origin
-enddo
 end subroutine
 
 !--------------------------------------------------------------------------------
@@ -649,28 +658,6 @@ if (use_CPORT1) then
 endif
 ! Allow time for completion of the connection
 call sleeper(2)
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-subroutine CheckAngles
-real(REAL_KIND) :: cosa, cosamin
-integer :: k, kmin
-cosamin = 1.0e10
-do k = 1,ncells
-	cosa = dot_product(cell_list(k)%orient,cell_list0(k)%orient)
-	if (cosa < cosamin) then
-		cosamin = cosa
-		kmin = k
-	endif
-enddo
-write(nflog,*)
-write(nflog,*) 'Minimum cosine of rotation angle: ',kmin,cosamin
-write(nflog,*) 'angle: ',acos(cosamin)*180/PI
-write(nflog,*)
-write(nflog,'(a,3f8.4)') 'Initial orient: ',cell_list0(kmin)%orient
-write(nflog,'(a,3f8.4)') 'Final orient:   ',cell_list(kmin)%orient
-write(nflog,*)
 end subroutine
 
 !-----------------------------------------------------------------------------------------

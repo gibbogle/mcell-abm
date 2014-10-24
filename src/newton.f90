@@ -10,8 +10,8 @@ contains
 !-----------------------------------------------------------------------------------------
 subroutine Newtonsolve(v,res)
 use :: iso_c_binding
-integer :: n, nd, k, kx, ky, kz, i, j, kd, it
-real(REAL_KIND) :: v(:), res, F(3), sum
+integer :: n, nd, k, kx, ky, kz, i, j, kd, it, res
+real(REAL_KIND) :: v(:), F(3), sum
 real(REAL_KIND), allocatable :: fv(:), del(:)
 integer, parameter :: nit = 3
 real(REAL_KIND), parameter :: beta = 1.0	! under-relaxation
@@ -41,6 +41,7 @@ do it = 1,nit
 !	enddo
 	write(*,*) 'invertJacobian'
 	call invertJacobian
+	stop
 !	do i = 1,3*Ncirc*Nlong
 !		do j = 1,3*Ncirc*Nlong
 !			if (abs(Jac(i,j)) > 1.0e4) write(*,'(2i4,e12.3)') i,j,Jac(i,j)
@@ -91,25 +92,14 @@ real(REAL_KIND), allocatable :: work(:)
 real(REAL_KIND) :: anorm, rcond, eps, det, A(2,2)
 integer, allocatable :: ipiv(:)
 integer :: n, nwork, info, i, j
-logical, parameter :: GET_CONDITION = .false.
+logical, parameter :: GET_CONDITION = .true.
 
 n = Ndim*Ncirc*Nlong
 allocate(ipiv(n))
 nwork = nw*n
 allocate(work(nwork))
 
-!A(1,1) = 1
-!A(1,2) = 2
-!A(2,1) = 3
-!A(2,2) = 4
-!n = 2
-!anorm = DLANGE( '1', n, n, A, n, work )
-!call dgetrf(n,n,A,n,ipiv,info)
-!call DGECON( '1', n, A, n, anorm, rcond, work, nwork, info )
-!write(*,'(a,e12.3)') 'anorm: ',anorm
-!write(*,'(a,e12.3)') 'Condition number: ',rcond
-
-!write(*,'(6e12.3)') Jac
+write(nflog,'(48e12.3)') Jac
 eps = 1.0e-10
 det = dmgt(eps,n,Jac)
 write(*,*)

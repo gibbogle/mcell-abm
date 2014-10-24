@@ -42,7 +42,7 @@ padding: 8px
     <item row="0" column="0">
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="page_input">
        <layout class="QVBoxLayout" name="verticalLayout">
@@ -1456,9 +1456,9 @@ padding: 8px
                </widget>
               </item>
               <item row="8" column="0">
-               <widget class="QMyLabel" name="label_FALPHA">
+               <widget class="QMyLabel" name="label_FALPHA_AXIAL">
                 <property name="text">
-                 <string>label_FALPHA</string>
+                 <string>label_FALPHA_AXIAL</string>
                 </property>
                </widget>
               </item>
@@ -1476,7 +1476,7 @@ padding: 8px
                </spacer>
               </item>
               <item row="8" column="2">
-               <widget class="QLineEdit" name="line_FALPHA">
+               <widget class="QLineEdit" name="line_FALPHA_AXIAL">
                 <property name="maximumSize">
                  <size>
                   <width>50</width>
@@ -1562,6 +1562,78 @@ padding: 8px
                  </size>
                 </property>
                </spacer>
+              </item>
+              <item row="9" column="0">
+               <widget class="QMyLabel" name="label_FALPHA_SHEAR">
+                <property name="text">
+                 <string>label_FALPHA_SHEAR</string>
+                </property>
+               </widget>
+              </item>
+              <item row="9" column="1">
+               <spacer name="horizontalSpacer_39">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>13</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item row="9" column="2">
+               <widget class="QLineEdit" name="line_FALPHA_SHEAR">
+                <property name="maximumSize">
+                 <size>
+                  <width>50</width>
+                  <height>16777215</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>1</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+               </widget>
+              </item>
+              <item row="10" column="0">
+               <widget class="QMyLabel" name="label_FALPHA_BEND">
+                <property name="text">
+                 <string>label_FALPHA_BEND</string>
+                </property>
+               </widget>
+              </item>
+              <item row="10" column="1">
+               <spacer name="horizontalSpacer_40">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>13</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item row="10" column="2">
+               <widget class="QLineEdit" name="line_FALPHA_BEND">
+                <property name="maximumSize">
+                 <size>
+                  <width>50</width>
+                  <height>16777215</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>1</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+               </widget>
               </item>
              </layout>
             </widget>

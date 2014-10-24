@@ -363,9 +363,9 @@ void MyVTK::renderCells(bool redo, bool zzz)
 		LOG_MSG("Initializing the renderer");
         ren->ResetCamera();
 	}
-    LOG_MSG("do iren->Render");
+//    LOG_MSG("do iren->Render");
     iren->Render();
-    LOG_MSG("did iren->Render");
+//    LOG_MSG("did iren->Render");
     first_VTK = false;
 //    if (record) {
 //        recorder();
@@ -392,7 +392,7 @@ void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
     kpolygon = 0;
     kp = 0;
     // Bottom
-    LOG_MSG("setPoints: Bottom");
+//    LOG_MSG("setPoints: Bottom");
     order[0] = 0;
     order[1] = 4;
     order[2] = 5;
@@ -413,7 +413,7 @@ void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
     }
 
     // Outside surface
-    LOG_MSG("setPoints: Outside");
+//    LOG_MSG("setPoints: Outside");
     order[0] = 0;
     order[1] = 1;
     order[2] = 2;
@@ -432,7 +432,7 @@ void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
         }
     }
     // Inside surface
-    LOG_MSG("setPoints: Inside");
+//    LOG_MSG("setPoints: Inside");
     order[0] = 4;
     order[1] = 7;
     order[2] = 6;
@@ -451,7 +451,7 @@ void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
         }
     }
     // Top
-    LOG_MSG("setPoints: Top");
+//    LOG_MSG("setPoints: Top");
     order[0] = 2;
     order[1] = 6;
     order[2] = 7;
@@ -464,13 +464,13 @@ void MyVTK::setPoints(vtkSmartPointer<vtkPoints> p)
         for (i=0; i<4; i++) {
             pt3D = h.vertex[order[i]];
             p->SetPoint(kp,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
-            sprintf(msg,"kp: %d icirc: %d khex: %d i: %d   %8.4f %8.4f %8.4f",kp,icirc,khex,i,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
-            LOG_MSG(msg);
+//            sprintf(msg,"kp: %d icirc: %d khex: %d i: %d   %8.4f %8.4f %8.4f",kp,icirc,khex,i,pt3D.x[0],pt3D.x[1],pt3D.x[2]);
+//            LOG_MSG(msg);
             kp++;
         }
         kpolygon++;
     }
-    LOG_MSG("setPoints: Done");
+//    LOG_MSG("setPoints: Done");
 }
 
 //---------------------------------------------------------------------------------------------
@@ -492,14 +492,12 @@ void MyVTK::process_Mcells()
     b = 0.3;
     if (SIMPLE_TEST) {
         npolygons = 2;
-//        npoints = 6;
         npoints = 8;
     } else {
         npolygons = 2*NC*(NL+1);
-//        npolygons = NC;     // bottom only
         npoints = 4*npolygons;
     }
-    LOG_MSG("process_Mcells");
+//    LOG_MSG("process_Mcells");
     if (reset) {
         reset = false;
         LOG_MSG("construct polygon arrays");
@@ -680,7 +678,6 @@ void MyVTK::process_Mcells()
             points->SetPoint(4,2.0, 0.0, 0.5);
             points->SetPoint(5,2.0, 1.0, 0.5);
         } else {
-            LOG_MSG("Just setPoints");
             setPoints(points);
             polygons->Initialize();
             vtkIdType *pointIds = new vtkIdType[4];

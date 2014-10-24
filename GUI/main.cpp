@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
     int res;
     char msg[1024];
     //initialize file logger
-    LOG_INIT("cells_GUI.log");
+    LOG_INIT("mcell_GUI.log");
 
     if( SetConsoleCtrlHandler( (PHANDLER_ROUTINE) CtrlHandler, TRUE ) )
     {

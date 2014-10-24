@@ -1769,13 +1769,17 @@ void MainWindow::runServer()
     sleep(100);
 
 	hours = 0;
+    double DELTA_T;
     Global::nt_vtk = 0;
 	for (int k=0; k<parm->nParams; k++) {
 		PARAM_SET p = parm->get_param(k);
         if (p.tag.compare("NHOURS") == 0) {
             hours = p.value;
 		}
-		if (p.tag.compare("NT_ANIMATION") == 0) {
+        if (p.tag.compare("DELTA_T") == 0) {
+            DELTA_T = p.value;
+        }
+        if (p.tag.compare("NT_ANIMATION") == 0) {
             Global::nt_vtk = p.value;
 		}
 	}
@@ -1786,7 +1790,10 @@ void MainWindow::runServer()
     connect(exthread, SIGNAL(summary(int)), this, SLOT(showSummary(int)));
     connect(exthread, SIGNAL(setupC(int,bool *)), this, SLOT(setupConc(int, bool *)));
     exthread->ncpu = ncpu;
-    exthread->nsteps = int(hours*60/Global::DELTA_T);
+    exthread->DELTA_T = DELTA_T;
+    exthread->nsteps = int(hours*60/exthread->DELTA_T);
+    sprintf(msg,"hours: %f DELTA_T: %f nsteps: %d",hours,exthread->DELTA_T,exthread->nsteps);
+    LOG_MSG(msg);
 	exthread->paused = false;
 	exthread->stopped = false;
 	exthread->start();
@@ -1950,7 +1957,7 @@ void MainWindow::drawGraphs()
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::displayScene()
 {
-    LOG_MSG("displayScene");
+//    LOG_MSG("displayScene");
 	bool redo = false;	// need to understand this
 	started = true;
     exthread->mutex2.lock();
@@ -1977,22 +1984,22 @@ void MainWindow::showSummary(int hr)
 
     LOG_MSG("showSummary");
 	step++;
-    if (step >= newR->nsteps) {
-		LOG_MSG("ERROR: step >= nsteps");
-        stopServer();
-		return;
-	}
+//    if (step >= newR->nsteps) {
+//        LOG_MSG("ERROR: step >= nsteps");
+//        stopServer();
+//		return;
+//	}
     hour = hr;
-    exthread->mutex1.lock();
-
-//    hour = summaryData[0]*DELTA_T/(60*60);
-//    hour = summaryData[1]*DELTA_T/60;
-
+//    exthread->mutex1.lock();
 
     progress = int(100.*hour/hours);
 	progressBar->setValue(progress);
 	QString hourstr = QString::number(int(hour));
 	hour_display->setText(hourstr);
+
+//    exthread->mutex1.unlock();
+//    exthread->summary_done.wakeOne();
+    return;
 
     newR->tnow[step] = step;
     QString casename = newR->casename;
