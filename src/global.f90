@@ -143,6 +143,8 @@ real(REAL_KIND), allocatable  :: fb(:)
 real(REAL_KIND) :: run_dmax, overlap_average, overlap_max
 integer :: run_kmax, run_maxstep
 integer :: j_deriv
+integer :: ic1_min, jl1_min, ic2_min, jl2_min
+logical :: may_collide, first_collide
 
 logical :: dbug = .false.
 
@@ -559,25 +561,29 @@ end function
 !   The variables are v2D(k): k = 1,..,2*Ncirc*Nlong
 ! 3D case: the circ direction wraps around, and the
 ! left neighbour of icirc=1 is icirc=Ncirc
-! Note: i = icirc, j = ilong
+! Note: i = icirc, j = jlong
 !	kx = (j-1)*3*Ncirc + (i-1)*3 + 1 for the x value
 !	ky = (j-1)*3*Ncirc + (i-1)*3 + 2 for the y value
 !	kz = (j-1)*3*Ncirc + (i-1)*3 + 3 for the z value
-! Need to add an internal pressure force
+! Optionally add shear force and an internal pressure force
+! Note: bending force is not added here, because it is computed as moments, and the
+! moment forces associated with a given cell are also applied to its four neighbours.
 !-----------------------------------------------------------------------------------------
 subroutine getForce(nd,v,icirc,jlong,Fsum) !bind(C,name='getForce')
 !use, intrinsic :: iso_c_binding
 !integer(c_int) :: icirc, jlong, nd
-!real(c_double) :: v(*), F_L(3), F_R(3), F_D(3), F_U(3), F_S(3), F_P(3), Fsum(3)
+!real(c_double) :: v(*), Fsum(3)
 integer :: icirc, jlong, nd
-real(REAL_KIND) :: v(*), F_L(3), F_R(3), F_D(3), F_U(3), F_S(3), F_P(3), Fsum(3)
+real(REAL_KIND) :: v(*), Fsum(3)
+real(REAL_KIND) :: F_L(3), F_R(3), F_D(3), F_U(3), F_S(3), F_P(3)
 real(REAL_KIND) :: d, factor, R, c(3), cn(3), fx, fy, fz, v_F(3)
-real(REAL_KIND) :: v_L(3), v_R(3), v_P(3), area, sum, press, tens, rampfactor
+real(REAL_KIND) :: v_P(3), area, sum, press, tens, rampfactor
 integer :: kx, ky, kz		! cell (icirc,j)
 integer :: kxn, kyn, kzn	! neighbour cell (Left, Right, Down or Up)
 integer :: in, ic
 
 integer :: jl_D, jl_U, ic_L, ic_R, kd, k
+real(REAL_KIND) :: v_L(3), v_R(3), v_D(3), v_U(3), v_N(3)
 real(REAL_KIND) :: c_LD(3), c_LU(3), c_RD(3), c_RU(3)
 real(REAL_KIND) :: d_L, d_R, w_0, w_L, w_R, del, dF(3)
 logical :: is_U, is_D
@@ -813,9 +819,6 @@ else
 	endif
 endif
 
-F_S = 0
-if (compute_shear) then
-! Shear force
 ic_L = icirc - 1
 if (icirc == 1) ic_L = Ncirc
 
@@ -836,6 +839,10 @@ else
 	is_D = .true.
 	is_U = .true.
 endif
+
+F_S = 0
+if (compute_shear) then
+! Shear force
 w_0 = sqrt( mcell(icirc,jlong)%width(1)**2 + mcell(icirc,jlong)%width(2)**2)
 if (is_D) then
 	kx = (jl_D-1)*nd*Ncirc + (ic_L-1)*nd + 1 
@@ -889,16 +896,15 @@ if (is_U) then
 endif
 endif
 
-! Pressure force
-if (jlong > 0) then
+! Pressure force - needs fixing: v_P should be outward normal vector, need area
+if (jlong > 0 .and. Pressure > 0) then
 	v_P = c
-	v_P(2) = 0
 	d = sqrt(dot_product(v_P,v_P))
 	v_P = v_P/d
 	F_P = Pressure*area*rampfactor*v_P
 else
 	F_P = 0
-endif
+endif		
 
 !write(*,'(a,3f8.3)') 'F_P: ',F_P
 Fsum = F_L + F_R + F_D + F_U + F_S + F_P
@@ -980,6 +986,122 @@ do ilong = 1,Nlong
 		enddo
 	enddo
 enddo
+end subroutine
+
+!-----------------------------------------------------------------------------------------
+! We need to look at pairs of cells that are close enough to experience repulsive force.
+!-----------------------------------------------------------------------------------------
+subroutine getCollisionForces(v,fc)
+real(REAL_KIND) :: v(*), fc(:)
+integer :: nd
+real(REAL_KIND) :: c0(3), c1(3), c2(3), v1(3), v2(3)
+real(REAL_KIND) :: d, w1, w2, dthresh, dlimit, theta, fun, f(3), dmin
+integer :: ic1, ic2, icirc1, icirc2, jlong1, jlong2, kx, ky, kz, kd, k
+integer :: ic1_lo, ic1_hi, ic2_lo, ic2_hi, jl1_lo, jl1_hi, jl2_lo, jl2_hi
+integer :: Nthresh = 30
+real(REAL_KIND) :: alpha_collide = 0.0001
+
+nd = Ndim
+if (.not.may_collide) then
+	c0 = 0.5*(mcell(1,Nlong/2)%centre + mcell(Ncirc/2,Nlong/2)%centre)
+	c1 = 0.5*(mcell(1,1)%centre + mcell(Ncirc/2,1)%centre)
+	c2 = 0.5*(mcell(1,Nlong)%centre + mcell(Ncirc/2,Nlong)%centre)
+!	v1 = c1 - c0
+!	d = sqrt(dot_product(v1,v1))
+!	v1 = v1/d
+!	v2 = c2 - c0
+!	d = sqrt(dot_product(v2,v2))
+!	v2 = v2/d
+!	may_collide = (sqrt(dot_product(v1,v2)) > 0.9)	! a very crude test
+!	write(nflog,'(a,6f8.3)') 'v1,v2: ',v1,v2
+	v2 = c2 - c1
+	may_collide = (sqrt(dot_product(v2,v2)) < 5*Rinitial)
+	if (.not.may_collide) return
+	first_collide = .true.
+endif
+!write(nflog,*) 'getCollisionForces'	
+if (first_collide) then
+	jl1_lo = 1
+	jl1_hi = Nlong - Nthresh
+	jl2_lo = 2
+	jl2_hi = Nlong
+	ic1_lo = 1
+	ic1_hi = Ncirc
+	ic2_lo = 1
+	ic2_hi = Ncirc
+	first_collide = .false.
+else
+	jl1_lo = max(1,jl1_min-3)
+	jl1_hi = min(Nlong,jl1_min+3)
+	ic1_lo = ic1_min - 3
+	ic1_hi = ic1_min + 3
+	jl2_lo = max(1,jl2_min-3)
+	jl2_hi = min(Nlong,jl2_min+3)
+	ic2_lo = ic2_min - 3
+	ic2_hi = ic2_min + 3
+endif
+dmin = 1.0e10
+!do jlong1 = 1,Nlong - Nthresh
+!	do icirc1 = 1,Ncirc
+do jlong1 = jl1_lo,jl1_hi
+	do ic1 = ic1_lo,ic1_hi
+		icirc1 = ic1
+		if (icirc1 < 1) icirc1 = icirc1 + Ncirc
+		if (icirc1 > Ncirc) icirc1 = icirc1 - Ncirc
+!		c1 = mcell(icirc1,jlong1)%centre
+		kx = (jlong1-1)*nd*Ncirc + (icirc1-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c1 = [v(kx),v(ky),v(kz)]
+		w1 = mcell(icirc1,jlong1)%width(3)
+!		do jlong2 = jlong1 + Nthresh, Nlong
+!			do icirc2 = 1,Ncirc
+		do jlong2 = jl2_lo,jl2_hi
+			if (abs(jlong1-jlong2) < Nthresh) cycle
+			do ic2 = ic2_lo,ic2_hi
+				icirc2 = ic2
+				if (icirc2 < 1) icirc2 = icirc2 + Ncirc
+				if (icirc2 > Ncirc) icirc2 = icirc2 - Ncirc
+!				c2 = mcell(icirc2,jlong2)%centre
+				kx = (jlong2-1)*nd*Ncirc + (icirc2-1)*nd + 1 
+				ky = kx + 1 
+				kz = kx + 2
+				c2 = [v(kx),v(ky),v(kz)]
+				w2 = mcell(icirc2,jlong2)%width(3)
+				v2 = c2 - c1
+				d = sqrt(dot_product(v2,v2))
+				if (d < dmin) then
+					dmin = d
+					ic1_min = icirc1
+					jl1_min = jlong1
+					ic2_min = icirc2
+					jl2_min = jlong2
+!					write(nflog,*) 'dmin: ',ic1_min,jl1_min,ic2_min,jl2_min,dmin
+				endif
+				dthresh = 1*(w1 + w2)
+				dlimit = (w1 + w2)/2
+				if (d < dthresh) then
+					theta = (PI/2)*(dthresh - d)/(dthresh - dlimit)
+					if (theta >= PI/2) then
+						write(nflog,*) 'Bad theta: ',theta,d,dthresh,dlimit
+						stop
+					endif
+					fun = tan(theta)
+					f = alpha_collide*fun*v2/d
+!					write(nflog,'(4i3,6f8.4)') jlong1,icirc1,jlong2,icirc2,d,theta,fun,f
+					! f(:) is the force on c2, -f(:) is the force on c1
+					do kd = 1,Ndim
+						k = (jlong1-1)*nd*Ncirc + (icirc1-1)*nd + kd 
+						fc(k) = fc(k) - f(kd)
+						k = (jlong2-1)*nd*Ncirc + (icirc2-1)*nd + kd 
+						fc(k) = fc(k) + f(kd)
+					enddo
+				endif
+			enddo
+		enddo
+	enddo
+enddo
+
 end subroutine
 
 !-----------------------------------------------------------------------------------------

@@ -122,19 +122,8 @@ enddo
 !	enddo
 !enddo
 
-!FP1%a = 2
-!FP1%b = 2
-!FP1%c = 10
-!FP1%e = 1.5
-!FP1%g = FP1%e/2.5
-!
-!FP2%a = 10   ! Fr = a when d/b = 1
-!FP2%b = 2
-!FP2%e = 1.5
-!FP2%g = 1   ! Fa = g when d = e
-!
-!run_kmax = 0
-!run_dmax = 0
+may_collide = .false.
+first_collide = .true.
 
 end subroutine
 
@@ -251,9 +240,6 @@ if (n /= nvars) then
 	write(*,*) 'ERROR: fnit: n != nvars: ',n,nvars
 	stop
 endif
-if (istep > nramp) then
-	fb = 0
-endif
 nd = Ndim
 do ilong = 1,Nlong
 	do icirc = 1,Ncirc
@@ -265,7 +251,11 @@ do ilong = 1,Nlong
 	enddo
 enddo
 if (istep > nramp) then
+	fb = 0
 	call getBendForces(xcur,fb)
+	fcur(1:n) = fcur(1:n) + fb
+	fb = 0
+	call getCollisionForces(xcur,fb)
 	fcur(1:n) = fcur(1:n) + fb
 endif
 itrmf = 0
@@ -323,13 +313,18 @@ end subroutine
 !--------------------------------------------------------------------------------
 subroutine updateWidths
 integer :: ilong, icirc, ivar
-real(REAL_KIND) :: x, y, ymid, tfactor, xfactor, yfactor, delta
-real(REAL_KIND) :: delta_max = 0.5
-integer :: nstep_start = 10
+real(REAL_KIND) :: x, y, z, ymid, tfactor, xfactor, yfactorx, yfactorz, zfactor, deltay, deltaz, cyz
+real(REAL_KIND) :: deltay_max = 0.6
+real(REAL_KIND) :: deltaz_max = 0.35
+real(REAL_KIND) :: t_start = 60		! time until bending start (min)
+real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
+integer :: nstep_start
 integer :: nstep_var
 
+nstep_start = t_start/DELTA_T
+nstep_var = t_var/DELTA_T
 if (istep <= nstep_start) return
-nstep_var = (delta_max/0.1)*40.		! sets a valid rate
+!nstep_var = (deltay_max/0.1)*40.		! sets a valid rate
 ivar = istep - nstep_start
 ymid = (1 + Nlong)/2.
 if (ivar <= nstep_var) then
@@ -341,13 +336,17 @@ do ilong = 1,Nlong
 	do icirc = 1,Ncirc
 		x = mcell0(icirc,ilong)%centre(1)
 		xfactor = x/Rinitial
-		y = mcell0(icirc,ilong)%centre(2)
-		yfactor = 1 - abs(ilong - ymid)/(ymid-1)
-		delta = tfactor*xfactor*yfactor*delta_max
-		mcell(icirc,ilong)%width(2) = (1 + delta)*mcell0(icirc,ilong)%width(2)
-		if (delta < 0) then		! adjust width(1) and width(3) to preserve volume
-			mcell(icirc,ilong)%width(1) = mcell0(icirc,ilong)%width(1)/sqrt(1 + delta)
-			mcell(icirc,ilong)%width(3) = mcell0(icirc,ilong)%width(3)/sqrt(1 + delta)
+		z = mcell0(icirc,ilong)%centre(3)
+		zfactor = z/Rinitial
+		yfactorx = 1 - abs(ilong - ymid)/(ymid-1)
+		deltay = tfactor*xfactor*yfactorx*deltay_max
+		yfactorz = (ilong - ymid)/Nlong
+		deltaz = tfactor*zfactor*yfactorz*deltaz_max
+		cyz = (1 + deltay)*(1 + deltaz)
+		mcell(icirc,ilong)%width(2) = cyz*mcell0(icirc,ilong)%width(2)
+		if (cyz < 1) then		! adjust width(1) and width(3) to preserve volume
+			mcell(icirc,ilong)%width(1) = mcell0(icirc,ilong)%width(1)/sqrt(cyz)
+			mcell(icirc,ilong)%width(3) = mcell0(icirc,ilong)%width(3)/sqrt(cyz)
 		endif
 	enddo
 enddo
@@ -380,9 +379,9 @@ do ilong = 1,Nlong
 		Nhex = Nhex + 1
 		do k = 1,8
 			hex_list(Nhex)%vertex(k)%x(:) = mcell(icirc,ilong)%vert(k,:)
-			if (ilong == 1 .and. icirc <= 2) then
-				write(nflog,'(3i4,3f8.4)') ilong,icirc,k,hex_list(Nhex)%vertex(k)%x(:)
-			endif
+!			if (ilong == 1 .and. icirc <= 2) then
+!				write(nflog,'(3i4,3f8.4)') ilong,icirc,k,hex_list(Nhex)%vertex(k)%x(:)
+!			endif
 		enddo
 	enddo
 enddo

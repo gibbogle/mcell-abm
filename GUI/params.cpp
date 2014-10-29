@@ -5,11 +5,11 @@ Params::Params()
 {
     PARAM_SET params[] = {
 
-{"NCIRC", 20, 0, 50,
+{"NCIRC", 15, 0, 50,
 "Ncirc",
 "Number of circumferential cells"},
 
-{"NLONG", 40, 0, 50,
+{"NLONG", 60, 0, 50,
 "Nlong",
 "Number of longitudinal cells"},
 
@@ -17,7 +17,7 @@ Params::Params()
 "Number of hours",
 "Length of the simulation.(hours)"},
 
-{"DELTA_T", 6, 0, 0,
+{"DELTA_T", 3, 0, 0,
 "Time step",
 "Time step (mins)."},
 
