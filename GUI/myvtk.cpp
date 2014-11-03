@@ -118,6 +118,7 @@ MyVTK::MyVTK(QWidget *page, QWidget *key_page)
     opacity = 1.0;
     display_celltype[1] = true;
     display_celltype[2] = true;
+    display_spheres = false;
     TCpos_list.clear();
     ren->GetActiveCamera()->Zoom(zoomlevel);		// try zooming OUT
 //    ren->GetActiveCamera()->SetDistance(100);
@@ -220,6 +221,7 @@ void MyVTK::createMappers()
 
     TcellMapper->SetInputConnection(Tcell->GetOutputPort());
 
+    /*
 	double rSphere0 = 0.5;
 	double rSphere1 = 0.3;
 	double rCylinder = 0.2;
@@ -293,6 +295,19 @@ void MyVTK::createMappers()
 	sphere2->Delete();
 	append1->Delete();
 	append2->Delete();
+    */
+}
+
+//---------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------
+void MyVTK::toggle_display_spheres(bool checked, double d) {
+    display_spheres = checked;
+    diameter = d;
+    hexactor->SetVisibility(!display_spheres);
+    for (int i=0; i<T_Actor_list.size(); i++) {
+        T_Actor_list[i].actor->SetVisibility(display_spheres);
+    }
+    renderCells(true,true);
 }
 
 
@@ -300,7 +315,7 @@ void MyVTK::createMappers()
 //---------------------------------------------------------------------------------------------
 void MyVTK::init()
 {
-//  T_Actor_list.clear();
+  T_Actor_list.clear();
 //	D_Actor_list.clear();
 //	Bnd_Actor_list.clear();
 }
@@ -357,7 +372,10 @@ void MyVTK::cleanup()
 //---------------------------------------------------------------------------------------------
 void MyVTK::renderCells(bool redo, bool zzz)
 {
-    process_Mcells();
+    if (display_spheres)
+        process_Tcells();
+    else
+        process_Mcells();
     if (Global::Nhex == 0) return;
     if (first_VTK) {
 		LOG_MSG("Initializing the renderer");
@@ -371,6 +389,7 @@ void MyVTK::renderCells(bool redo, bool zzz)
 //        recorder();
 //    }
 }
+
 
 
 //---------------------------------------------------------------------------------------------
@@ -512,16 +531,6 @@ void MyVTK::process_Mcells()
         }
         polygons->Initialize();
         polygons->SetNumberOfCells(npolygons);
-
-//        if (!polygon_array) {
-//            polygon_array = new vtkSmartPointer<vtkPolygon>[10*npolygons];
-//            LOG_MSG("created polygon_array");
-//           for (i=0; i<10*npolygons; i++) {
-//               polygon_array[i] = vtkSmartPointer<vtkPolygon>::New();
-//           }
-//        }
-//        LOG_MSG("created polygon_arrays");
-
         sprintf(msg,"npolygons: %d npoints: %d",npolygons,npoints);
         LOG_MSG(msg);
 
@@ -552,8 +561,6 @@ void MyVTK::process_Mcells()
 
             order[0] = 4;
             order[1] = 5;
-//            order[2] = 2;
-//            order[3] = 1;
             order[2] = 6;
             order[3] = 7;
             // Create the polygon
@@ -1013,8 +1020,9 @@ void MyVTK::process_Tcells()
     QColor qcolor, colour1, colour2;
     bool display;
 
- //   LOG_QMSG("process_Tcells");
-    int np = TCpos_list.length();
+ //   LOG_MSG("process_Tcells");
+ //   int np = TCpos_list.length();
+    int np = Global::Nhex;
     if (np == 0) return;
     int na = T_Actor_list.length();
     if (Global::istep < 0) {
@@ -1024,6 +1032,7 @@ void MyVTK::process_Tcells()
     }
     colour1 = celltype_colour[1];
     colour2 = celltype_colour[2];
+    /*
     maxtag = 0;
     for (i=0; i<np; i++) {
         cp = TCpos_list[i];
@@ -1034,12 +1043,16 @@ void MyVTK::process_Tcells()
         sprintf(msg,"maxtag: %d",maxtag);
         LOG_MSG(msg);
     }
+    */
+    maxtag = np;
     ap = &a;
     for (tag=na; tag<=maxtag; tag++) {
         ap->actor = vtkActor::New();
         ap->actor->SetMapper(TcellMapper);
         ap->active = false;
         T_Actor_list.append(a);
+//        sprintf(msg,"actor: %d",tag);
+//        LOG_MSG(msg);
     }
     na = T_Actor_list.length();
     bool *in_pos_list;
@@ -1047,9 +1060,15 @@ void MyVTK::process_Tcells()
     for (tag=0; tag<na; tag++)
         in_pos_list[tag] = false;
     for (i=0; i<np; i++) {
-        cp = TCpos_list[i];
-        tag = cp.tag;
-        growth = cp.state/100.;
+//        cp = TCpos_list[i];
+//        tag = cp.tag;
+//        growth = cp.state/100.;
+        cp.x = Global::hex_list[i].centre[0];
+        cp.y = Global::hex_list[i].centre[1];
+        cp.z = Global::hex_list[i].centre[2];
+        cp.diameter = diameter;
+        growth = 0.1;
+        tag = i;
         display = true;
         // Wnt_Cyclin
         int itype;

@@ -87,6 +87,7 @@ type, bind(C) :: field_data
 end type
 
 type, bind(C) :: hexahedron
+	real(c_double) :: centre(3)
 	type(point_type) :: vertex(8)
 end type
 
@@ -585,7 +586,8 @@ integer :: in, ic
 integer :: jl_D, jl_U, ic_L, ic_R, kd, k
 real(REAL_KIND) :: v_L(3), v_R(3), v_D(3), v_U(3), v_N(3)
 real(REAL_KIND) :: c_LD(3), c_LU(3), c_RD(3), c_RU(3)
-real(REAL_KIND) :: d_L, d_R, w_0, w_L, w_R, del, dF(3)
+real(REAL_KIND) :: c_L(3), c_R(3), c_D(3), c_U(3), v_LR(3), v_DU(3)
+real(REAL_KIND) :: d_L, d_R, d_LR, d_DU, w_0, w_L, w_R, del, dF(3)
 logical :: is_U, is_D
 
 logical :: compute_shear = .true.
@@ -897,11 +899,50 @@ endif
 endif
 
 ! Pressure force - needs fixing: v_P should be outward normal vector, need area
-if (jlong > 0 .and. Pressure > 0) then
-	v_P = c
+if (Pressure > 0) then
+	if (is_D) then
+		kx = (jl_D-1)*nd*Ncirc + (icirc-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_D = [v(kx),v(ky),v(kz)]
+	else
+		c_D = c
+	endif
+	if (is_U) then
+		kx = (jl_U-1)*nd*Ncirc + (icirc-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_U = [v(kx),v(ky),v(kz)]
+	else
+		c_U = c
+	endif
+	v_DU = c_U - c_D
+	d_DU = sqrt(dot_product(v_DU,v_DU))
+	v_DU = v_DU/d_DU
+	kx = (jlong-1)*nd*Ncirc + (ic_L-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_L = [v(kx),v(ky),v(kz)]
+	kx = (jlong-1)*nd*Ncirc + (ic_R-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_R = [v(kx),v(ky),v(kz)]
+	v_LR = c_R - c_L
+	d_LR = sqrt(dot_product(v_LR,v_LR))
+	v_LR = v_LR/d_LR
+	! The pressure force is normal to v_LR and v_DU, and proportional to the area,
+	! which is (roughly) proportional to d_LU*d_LR
+	! The outward vector is v_LR x v_DU
+	call cross_product(v_LR, v_DU, v_P)
 	d = sqrt(dot_product(v_P,v_P))
 	v_P = v_P/d
+	area = d_LR*d_DU
+	if (jlong == 1 .or. jlong == Nlong) area = 2*area
 	F_P = Pressure*area*rampfactor*v_P
+!	if (jlong == Nlong .or. jlong == Nlong - 2) then
+!	if (icirc == 1) then
+!		write(nflog,'(2i4,6f8.4)') icirc,jlong,v_P,F_P
+!	endif
 else
 	F_P = 0
 endif		

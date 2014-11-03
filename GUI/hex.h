@@ -7,6 +7,7 @@ struct point3d_str {
 typedef point3d_str POINT3D;
 
 struct hexahedron {
+    double centre[3];
     POINT3D vertex[8];
 };
 typedef hexahedron HEXAHEDRON;

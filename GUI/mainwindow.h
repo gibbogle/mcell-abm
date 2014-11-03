@@ -134,6 +134,9 @@ private slots:
     void on_comboBox_CELLCOLOUR_3_currentIndexChanged(int index);
     void on_comboBox_CELLCOLOUR_4_currentIndexChanged(int index);
 
+    void on_checkBox_display_spheres_toggled(bool checked);
+    void on_lineEdit_diameter_textChanged();
+
     void on_pushButtonGetCellMLFile_clicked();
     void on_pushButtonLoadCellMLFile_clicked();
     void cellmlParameterChanged();

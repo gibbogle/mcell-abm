@@ -379,10 +379,8 @@ do ilong = 1,Nlong
 		Nhex = Nhex + 1
 		do k = 1,8
 			hex_list(Nhex)%vertex(k)%x(:) = mcell(icirc,ilong)%vert(k,:)
-!			if (ilong == 1 .and. icirc <= 2) then
-!				write(nflog,'(3i4,3f8.4)') ilong,icirc,k,hex_list(Nhex)%vertex(k)%x(:)
-!			endif
 		enddo
+		hex_list(Nhex)%centre = mcell(icirc,ilong)%centre
 	enddo
 enddo
 !nEC_list = ncells

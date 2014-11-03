@@ -191,7 +191,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     pushButtonLoadCellMLFile->setEnabled(false);
     tabs->setCurrentIndex(3);   //tab_run
-
+    checkBox_display_spheres->setChecked(false);
     cellML_loaded = true;   ////////false;
 
     goToInputs();
@@ -456,6 +456,20 @@ void MainWindow:: setupCellML()
     form->addRow(component->label_list[ivar],component->line_list[ivar]);
 */
 
+}
+
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
+void MainWindow::on_checkBox_display_spheres_toggled(bool checked) {
+    QString diam_str = lineEdit_diameter->text();
+    vtk->toggle_display_spheres(checked,diam_str.toDouble());
+}
+
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
+void MainWindow::on_lineEdit_diameter_textChanged() {
+    QString diam_str = lineEdit_diameter->text();
+    vtk->toggle_display_spheres(checkBox_display_spheres->isChecked(),diam_str.toDouble());
 }
 
 //--------------------------------------------------------------------------------------------------------

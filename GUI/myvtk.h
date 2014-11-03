@@ -48,8 +48,9 @@ using namespace std;
 
 struct cell_pos {
 	int tag;
-	int x, y, z;
-	double diameter;
+//	int x, y, z;
+    double x, y, z;
+    double diameter;
 //	double state;
 	int state;
     int highlight;
@@ -73,7 +74,7 @@ struct colour_str {
 };
 typedef colour_str COLOUR_TYPE;
 
-#define USE_CELLTYPE_COLOUR true
+#define USE_CELLTYPE_COLOUR false
 
 class MyVTK
 {
@@ -109,6 +110,7 @@ public:
     void stop();
     void set_celltype_colour(COLOUR_TYPE *, QString str);
     void makeColors(vtkSmartPointer<vtkUnsignedCharArray> colors, int nV);
+    void toggle_display_spheres(bool, double);
 
     QList<CELL_POS > TCpos_list;
 //	QList<CELL_POS > DCpos_list;
@@ -160,6 +162,8 @@ public:
 	bool save_image;
     bool display_celltype[10];
     bool reset;
+    bool display_spheres;
+    double diameter;
 //    QString celltype_colour[10];
     QColor celltype_colour[10];
     QString casename;
