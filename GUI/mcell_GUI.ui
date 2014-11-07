@@ -2116,31 +2116,18 @@ padding: 8px
        <widget class="QWidget" name="widget_dialog" native="true">
         <property name="geometry">
          <rect>
-          <x>860</x>
-          <y>330</y>
+          <x>960</x>
+          <y>180</y>
           <width>120</width>
           <height>80</height>
          </rect>
         </property>
        </widget>
-       <widget class="QCheckBox" name="checkBox_display_spheres">
-        <property name="geometry">
-         <rect>
-          <x>300</x>
-          <y>0</y>
-          <width>111</width>
-          <height>21</height>
-         </rect>
-        </property>
-        <property name="text">
-         <string>Display spheres?</string>
-        </property>
-       </widget>
        <widget class="QLineEdit" name="lineEdit_diameter">
         <property name="geometry">
          <rect>
-          <x>410</x>
-          <y>0</y>
+          <x>1020</x>
+          <y>390</y>
           <width>31</width>
           <height>20</height>
          </rect>
@@ -2155,15 +2142,82 @@ padding: 8px
        <widget class="QLabel" name="alabel_diameter">
         <property name="geometry">
          <rect>
-          <x>450</x>
-          <y>0</y>
-          <width>51</width>
+          <x>1060</x>
+          <y>390</y>
+          <width>91</width>
           <height>21</height>
          </rect>
         </property>
         <property name="text">
-         <string>Diameter</string>
+         <string>Sphere diameter</string>
         </property>
+       </widget>
+       <widget class="QGroupBox" name="groupBox_display_2">
+        <property name="geometry">
+         <rect>
+          <x>890</x>
+          <y>310</y>
+          <width>120</width>
+          <height>111</height>
+         </rect>
+        </property>
+        <property name="title">
+         <string>Display</string>
+        </property>
+        <widget class="QRadioButton" name="radioButton_display_squad">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>20</y>
+           <width>101</width>
+           <height>18</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Superquadrics</string>
+         </property>
+         <property name="checked">
+          <bool>false</bool>
+         </property>
+         <attribute name="buttonGroup">
+          <string>buttonGroup_display</string>
+         </attribute>
+        </widget>
+        <widget class="QRadioButton" name="radioButton_display_block">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>50</y>
+           <width>82</width>
+           <height>18</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Blocks</string>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+         <attribute name="buttonGroup">
+          <string>buttonGroup_display</string>
+         </attribute>
+        </widget>
+        <widget class="QRadioButton" name="radioButton_display_sphere">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>80</y>
+           <width>82</width>
+           <height>18</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>Spheres</string>
+         </property>
+         <attribute name="buttonGroup">
+          <string>buttonGroup_display</string>
+         </attribute>
+        </widget>
        </widget>
       </widget>
       <widget class="QWidget" name="page_2D">
@@ -2662,5 +2716,6 @@ padding: 8px
  <buttongroups>
   <buttongroup name="buttonGroup_constituent"/>
   <buttongroup name="buttonGroup_plane"/>
+  <buttongroup name="buttonGroup_display"/>
  </buttongroups>
 </ui>

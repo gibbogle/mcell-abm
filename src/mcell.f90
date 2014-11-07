@@ -135,7 +135,7 @@ subroutine PlaceCells
 integer :: icirc, ilong, kpar=0
 integer :: n, kdmax, nwork
 real(REAL_KIND) :: x, y, z
-real(REAL_KIND) :: dtheta, theta, w
+real(REAL_KIND) :: dtheta, theta, w, area
 
 if (allocated(mcell)) then
 	deallocate(mcell)
@@ -194,6 +194,7 @@ else
 	Rinitial = Ncirc*dx_init/(2*PI)
 	dtheta = 2*PI/Ncirc
 	w = 2*Rinitial*sin(dtheta/2)
+	area = w*2*PI*(Rinitial-w/2)/Ncirc	! internal radius = Rinitial - w/2
 	do icirc = 1,Ncirc
 		theta = (icirc-0.5)*dtheta
 		x = Rinitial*cos(theta)
@@ -202,6 +203,7 @@ else
 			y = (ilong-1)*w
 			mcell(icirc,ilong)%centre = [x,y,z]
 			mcell(icirc,ilong)%width = [w, w, w]
+			mcell(icirc,ilong)%area = area
 		enddo
 	enddo
 endif
@@ -381,6 +383,10 @@ do ilong = 1,Nlong
 			hex_list(Nhex)%vertex(k)%x(:) = mcell(icirc,ilong)%vert(k,:)
 		enddo
 		hex_list(Nhex)%centre = mcell(icirc,ilong)%centre
+		hex_list(Nhex)%width = mcell(icirc,ilong)%width
+		hex_list(Nhex)%vx = mcell(icirc,ilong)%vx
+		hex_list(Nhex)%vy = mcell(icirc,ilong)%vy
+		hex_list(Nhex)%vz = mcell(icirc,ilong)%vz
 	enddo
 enddo
 !nEC_list = ncells

@@ -61,8 +61,12 @@ end type
 type mcell_type
 	real(REAL_KIND) :: centre(3)
 	real(REAL_KIND) :: volume
+	real(REAL_KIND) :: area
 	real(REAL_KIND) :: width(3)
 	real(REAL_KIND) :: vert(8,3)	! vertices
+    real(REAL_KIND) :: vx(3)		! X, Y, Z axes of the block
+    real(REAL_KIND) :: vy(3)
+    real(REAL_KIND) :: vz(3)
 end type
 
 type XYZ_type
@@ -89,6 +93,10 @@ end type
 type, bind(C) :: hexahedron
 	real(c_double) :: centre(3)
 	type(point_type) :: vertex(8)
+    real(c_double) :: width(3)
+    real(c_double) :: vx(3)
+    real(c_double) :: vy(3)
+    real(c_double) :: vz(3)
 end type
 
 integer, parameter :: nflog=10, nfin=11, nfout=12, nfres=13
@@ -936,8 +944,9 @@ if (Pressure > 0) then
 	call cross_product(v_LR, v_DU, v_P)
 	d = sqrt(dot_product(v_P,v_P))
 	v_P = v_P/d
-	area = d_LR*d_DU
-	if (jlong == 1 .or. jlong == Nlong) area = 2*area
+!	area = d_LR*d_DU
+!	if (jlong == 1 .or. jlong == Nlong) area = 2*area
+	area = mcell(icirc,jlong)%area
 	F_P = Pressure*area*rampfactor*v_P
 !	if (jlong == Nlong .or. jlong == Nlong - 2) then
 !	if (icirc == 1) then

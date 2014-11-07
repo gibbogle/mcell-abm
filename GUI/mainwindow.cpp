@@ -191,7 +191,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     pushButtonLoadCellMLFile->setEnabled(false);
     tabs->setCurrentIndex(3);   //tab_run
-    checkBox_display_spheres->setChecked(false);
+    radioButton_display_squad->setChecked(true);
     cellML_loaded = true;   ////////false;
 
     goToInputs();
@@ -256,7 +256,8 @@ void MainWindow::createActions()
 //    connect(action_show_gradient2D, SIGNAL(triggered()), this, SLOT(showGradient2D()));
     connect(buttonGroup_constituent, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(buttonClick_constituent(QAbstractButton*)));
     connect(buttonGroup_plane, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(buttonClick_plane(QAbstractButton*)));
-	connect(lineEdit_fraction, SIGNAL(textEdited(QString)), this, SLOT(textEdited_fraction(QString)));
+    connect(buttonGroup_display, SIGNAL(buttonClicked(QAbstractButton*)), this, SLOT(buttonClick_display(QAbstractButton*)));
+    connect(lineEdit_fraction, SIGNAL(textEdited(QString)), this, SLOT(textEdited_fraction(QString)));
     connect(action_select_constituent, SIGNAL(triggered()), SLOT(onSelectConstituent()));
     connect(line_CELLPERCENT_1, SIGNAL(textEdited(QString)), this, SLOT(on_line_CELLPERCENT_1_textEdited(QString)));
     connect(line_CELLPERCENT_2, SIGNAL(textEdited(QString)), this, SLOT(on_line_CELLPERCENT_2_textEdited(QString)));
@@ -460,16 +461,10 @@ void MainWindow:: setupCellML()
 
 //--------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------
-void MainWindow::on_checkBox_display_spheres_toggled(bool checked) {
-    QString diam_str = lineEdit_diameter->text();
-    vtk->toggle_display_spheres(checked,diam_str.toDouble());
-}
-
-//--------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------
 void MainWindow::on_lineEdit_diameter_textChanged() {
     QString diam_str = lineEdit_diameter->text();
-    vtk->toggle_display_spheres(checkBox_display_spheres->isChecked(),diam_str.toDouble());
+//    vtk->toggle_display_spheres(checkBox_display_spheres->isChecked(),diam_str.toDouble());
+    vtk->set_diameter(diam_str.toDouble());
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -1972,12 +1967,9 @@ void MainWindow::drawGraphs()
 void MainWindow::displayScene()
 {
 //    LOG_MSG("displayScene");
-	bool redo = false;	// need to understand this
 	started = true;
     exthread->mutex2.lock();
-	bool fast = true;
-//	vtk->get_cell_positions(fast);
-	vtk->renderCells(redo,false);
+    vtk->renderCells();
     if (videoVTK->record) {
         videoVTK->recorder();
     } else if (action_stop_recording_VTK->isEnabled()) {
@@ -1994,7 +1986,6 @@ void MainWindow::displayScene()
 void MainWindow::showSummary(int hr)
 {
     double val;
-    int res;
 
     LOG_MSG("showSummary");
 	step++;
@@ -2063,19 +2054,10 @@ void MainWindow::outputData(QString qdata)
 //	if (qdata.compare("VTK") == 0) {
 	if (qdata.startsWith("VTK")) {
 		qdata.replace(0,3,"");
-        bool savepos = false;
-//		bool savepos = cbox_savepos->isChecked();
-//		if (savepos) {
-//			if (step < savepos_start) {
-//				savepos = false;
-//			}
-//		}
-//		vtk->read_cell_positions(cellfile, vtkfile, savepos);
 		started = true;
-        if (Global::showingVTK > 0 || firstVTK) {
+        if ((Global::showingVTK > 0) || firstVTK) {
 			firstVTK = false;
-			bool redo = false;
-	        vtk->renderCells(redo,false);
+            vtk->renderCells();
 		} 
 	    posdata = true;
 		if (qdata.length() == 0)
@@ -2157,7 +2139,6 @@ void MainWindow::postConnection()
 
 	// Add the new result set to the list
 //	result_list.append(newR);
-//	vtk->renderCells(true,true);		// for the case that the VTK page is viewed only after the execution is complete
     if (action_stop_recording_VTK->isEnabled()) {
         stopRecorderVTK();
     }
@@ -3394,10 +3375,10 @@ void MainWindow::on_action_show_gradient2D_triggered()
 //--------------------------------------------------------------------------------------------------------
 void MainWindow::setupConc(int nc, bool *cused)
 {
-    int ichemo;
-    QString rbText;
+//    QString rbText;
 
 //    LOG_MSG("setupConc");
+//    int ichemo;
 //    for (ichemo=0; ichemo<nc; ichemo++) {
 //        if (ichemo == OXYGEN)
 //            rbText = "radioButton_oxygen";
@@ -3556,7 +3537,7 @@ void MainWindow::on_cbox_USE_DRUG_A_toggled(bool checked)
 void MainWindow::on_checkBox_CELLDISPLAY_0_toggled(bool display)
 {
     vtk->display_celltype[0] = display;
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 
@@ -3566,7 +3547,7 @@ void MainWindow::on_checkBox_CELLDISPLAY_1_toggled(bool display)
 {
     vtk->display_celltype[1] = display;
 //    vtk->cleanup();
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 //    LOG_QMSG("toggled display_celltype[1]");
 }
 
@@ -3575,7 +3556,7 @@ void MainWindow::on_checkBox_CELLDISPLAY_1_toggled(bool display)
 void MainWindow::on_checkBox_CELLDISPLAY_2_toggled(bool display)
 {
     vtk->display_celltype[2] = display;
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3583,7 +3564,7 @@ void MainWindow::on_checkBox_CELLDISPLAY_2_toggled(bool display)
 void MainWindow::on_checkBox_CELLDISPLAY_3_toggled(bool display)
 {
     vtk->display_celltype[3] = display;
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3591,7 +3572,7 @@ void MainWindow::on_checkBox_CELLDISPLAY_3_toggled(bool display)
 void MainWindow::on_checkBox_CELLDISPLAY_4_toggled(bool display)
 {
     vtk->display_celltype[4] = display;
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3599,7 +3580,7 @@ void MainWindow::on_checkBox_CELLDISPLAY_4_toggled(bool display)
 void MainWindow::on_comboBox_CELLCOLOUR_0_currentIndexChanged(int index)
 {
     vtk->celltype_colour[0] = comboColour[index];
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3608,7 +3589,7 @@ void MainWindow::on_comboBox_CELLCOLOUR_1_currentIndexChanged(int index)
 {
 //    vtk->celltype_colour[1] = comboBox_CELLCOLOUR_1->currentText();
     vtk->celltype_colour[1] = comboColour[index];
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 //    sprintf(msg,"changed celltype_colour[1]: index: %d r,g,b: %d %d %d",index,qcolor.red(),qcolor.green(),qcolor.blue());
 //    LOG_MSG(msg);
 }
@@ -3619,7 +3600,7 @@ void MainWindow::on_comboBox_CELLCOLOUR_2_currentIndexChanged(int index)
 {
 //    vtk->celltype_colour[2] = comboBox_CELLCOLOUR_2->currentText();
     vtk->celltype_colour[2] = comboColour[index];
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3627,7 +3608,7 @@ void MainWindow::on_comboBox_CELLCOLOUR_2_currentIndexChanged(int index)
 void MainWindow::on_comboBox_CELLCOLOUR_3_currentIndexChanged(int index)
 {
     vtk->celltype_colour[3] = comboColour[index];
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //-----------------------------------------------------------------------------------------
@@ -3635,7 +3616,7 @@ void MainWindow::on_comboBox_CELLCOLOUR_3_currentIndexChanged(int index)
 void MainWindow::on_comboBox_CELLCOLOUR_4_currentIndexChanged(int index)
 {
     vtk->celltype_colour[4] = comboColour[index];
-    vtk->renderCells(false,false);
+    vtk->renderCells();
 }
 
 //--------------------------------------------------------------------------------------------------------
@@ -3968,16 +3949,6 @@ QString MainWindow::strippedName(const QString &fullFileName)
 }
 */
 
-void MainWindow::on_radioButton_oxygen_clicked()
-{
-
-}
-
-void MainWindow::on_radioButton_glucose_clicked(bool checked)
-{
-
-}
-
 void MainWindow::buttonClick_constituent(QAbstractButton* button)
 {
     LOG_MSG("buttonClick_constituent");
@@ -3990,9 +3961,18 @@ void MainWindow::buttonClick_plane(QAbstractButton* button)
     field->setPlane(button);
 }
 
-void MainWindow::buttonClick_canvas(QAbstractButton* button)
+void MainWindow::buttonClick_display(QAbstractButton* button)
 {
-    LOG_MSG("buttonClick_canvas");
+    int ibutton;
+    LOG_MSG("buttonClick_display");
+    if (button->objectName().contains("squad")) {
+        ibutton = 0;
+    } else if (button->objectName().contains("block")) {
+        ibutton = 1;
+    } else if (button->objectName().contains("sphere")) {
+        ibutton = 2;
+    }
+    vtk->toggle_display_mode(ibutton);
 }
 
 void MainWindow::textChanged_fraction(QString text)

@@ -102,7 +102,8 @@ contains
 !-------------------------------------------------------------------------------------
 subroutine smoother
 integer :: icirc, ilong, inext, k
-real(REAL_KIND) :: v(4,3), vave(3)
+real(REAL_KIND) :: v(4,3), vave(3), d(5), vside(3)
+real(REAL_KIND) :: a, b, c, s
 
 do ilong = 0,Nlong
 	do icirc = 1,Ncirc
@@ -139,7 +140,35 @@ do ilong = 0,Nlong
 		endif
 	enddo	
 enddo
-
+! Compute area of internal faces (5,6,7,8)
+! Triangle area A = sqrt(s(s-a)(s-b)(s-c)) where s = (a+b+c)/2
+! Two triangles: (5,6,7) and (5,7,8)
+do ilong = 1,Nlong
+	do icirc = 1,Ncirc
+		do k = 1,4
+			if (k < 4) then
+				vside = mcell(icirc,ilong)%vert(4+k+1,:) - mcell(icirc,ilong)%vert(4+k,:)
+			else
+				vside = mcell(icirc,ilong)%vert(4+1,:) - mcell(icirc,ilong)%vert(4+k,:)
+			endif
+			d(k) = sqrt(dot_product(vside,vside))
+		enddo
+		vside = mcell(icirc,ilong)%vert(7,:) - mcell(icirc,ilong)%vert(5,:)
+		d(5) = sqrt(dot_product(vside,vside))
+		! triangle (5,6,7)
+		a = d(1)
+		b = d(2)
+		c = d(5)
+		s = (a+b+c)/2
+		mcell(icirc,ilong)%area = sqrt(s*(s-a)*(s-b)*(s-c))
+		! triangle (5,7,8)
+		a = d(5)
+		b = d(3)
+		c = d(4)
+		s = (a+b+c)/2
+		mcell(icirc,ilong)%area = mcell(icirc,ilong)%area + sqrt(s*(s-a)*(s-b)*(s-c))
+	enddo
+enddo
 end subroutine
 
 !-------------------------------------------------------------------------------------
@@ -149,7 +178,7 @@ subroutine makeVertices(i,j)
 integer :: i,j
 real(REAL_KIND) :: p_O(3), p_L(3), p_R(3), p_D(3), p_U(3), p_LD(3), p_RD(3)
 real(REAL_KIND) :: p_M_L(3), p_M_R(3), p_M_D(3), p_M_U(3), p_M_O(3), p_M_I(3)
-real(REAL_KIND) :: v_N(3), a(6), b(6), c(6), d(6), p_T(3,3), v1(3), v2(3), va, w
+real(REAL_KIND) :: v_N(3), a(6), b(6), c(6), d(6), p_T(3,3), vx(3), vy(3), va, w
 real(REAL_KIND) :: AV(3,3), rhs(3), sol(3)
 integer :: k, row, kv(8,3)
 logical :: dbug = .false.
@@ -215,15 +244,22 @@ c(k) = v_N(3)
 if (dbug) write(*,'(a,i4,3f8.4)') 'p_M_U: ',k,p_M_U
 d(k) = dot_product(p_M_U,v_N)
 
-v1 = p_M_R - p_M_L
-v2 = p_M_U - p_M_D
-if (dbug) write(*,'(a,3f8.3)') 'v1: ',v1
-if (dbug) write(*,'(a,3f8.3)') 'v2: ',v2
-if (dbug) write(*,'(a,f8.4)') 'v1.v2: ',dot_product(v1,v2)
-call cross_product(v1,v2,v_N)
+vx = p_M_R - p_M_L
+va = sqrt(dot_product(vx,vx))
+vx = vx/va
+vy = p_M_U - p_M_D
+va = sqrt(dot_product(vy,vy))
+vy = vy/va
+if (dbug) write(*,'(a,3f8.3)') 'vx: ',vx
+if (dbug) write(*,'(a,3f8.3)') 'vy: ',vy
+if (dbug) write(*,'(a,f8.4)') 'vx.vy: ',dot_product(vx,vy)
+call cross_product(vx,vy,v_N)
 if (dbug) write(*,'(a,3f8.3)') 'v_N: ',v_N
 va = sqrt(dot_product(v_N,v_N))
 v_N = v_N/va
+mcell(i,j)%vx = vx
+mcell(i,j)%vy = vy
+mcell(i,j)%vz = v_N
 if (dbug) write(*,'(a,3f8.3)') 'v_N: ',v_N
 w = mcell(i,j)%width(3)
 if (dbug) write(*,'(a,f8.3)') 'w: ',w

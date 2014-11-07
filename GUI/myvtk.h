@@ -33,6 +33,10 @@
 #include <vtkPolyData.h>
 #include <vtkCellData.h>
 
+#include <vtkSuperquadricSource.h>
+#include <vtkTransform.h>
+#include <vtkMatrix4x4.h>
+
 //#include <vtkConfigure.h>
 
 #include <QInputDialog>
@@ -66,6 +70,8 @@ typedef bond_pos BOND_POS;
 struct actor_str {
     bool active;
     vtkActor *actor;
+    vtkSmartPointer<vtkMatrix4x4> vtkM;
+    vtkSmartPointer<vtkTransform> transform;
 };
 typedef actor_str ACTOR_TYPE;
 
@@ -75,6 +81,9 @@ struct colour_str {
 typedef colour_str COLOUR_TYPE;
 
 #define USE_CELLTYPE_COLOUR false
+#define DISPLAY_SQUADS 0
+#define DISPLAY_BLOCKS 1
+#define DISPLAY_SPHERES 2
 
 class MyVTK
 {
@@ -89,16 +98,15 @@ public:
     void key_canvas(QWidget *);
     void createMappers();
 	void read_cell_positions(QString, QString, bool);
-	void get_cell_positions(bool fast);
+    void get_cell_positions();
 	void init();
 	void cleanup();
 	void unpack(int x, double *, double *, double *);
-	void renderCells(bool,bool);
-    void process_Mcells();
+    void renderCells();
     void setPoints(vtkSmartPointer<vtkPoints> p);
+    void process_Mcells();
     void process_Tcells();
-//    void process_Dcells();
-//    void process_bonds();
+    void process_squads();
 	bool startPlayer(QString, QTimer *, bool);
 	bool nextFrame();
 	void pause();
@@ -110,13 +118,15 @@ public:
     void stop();
     void set_celltype_colour(COLOUR_TYPE *, QString str);
     void makeColors(vtkSmartPointer<vtkUnsignedCharArray> colors, int nV);
-    void toggle_display_spheres(bool, double);
+    void set_diameter(double);
+    void toggle_display_mode(int button);
 
     QList<CELL_POS > TCpos_list;
 //	QList<CELL_POS > DCpos_list;
 //	QList<BOND_POS > bondpos_list;
 //	QList<vtkActor *> B_Actor_list;
     QList<ACTOR_TYPE> T_Actor_list;
+    QList<ACTOR_TYPE> S_Actor_list;
 //  QList<vtkActor *> D_Actor_list;
 //  QList<ACTOR_TYPE> D_Actor_list;
 //    QList<vtkActor *> Bnd_Actor_list;
@@ -127,6 +137,7 @@ public:
 	vtkRenderer* ren;
 	vtkRenderWindowInteractor * iren;
     vtkPolyDataMapper *TcellMapper;
+    vtkSmartPointer<vtkPolyDataMapper> squadMapper;
 //	vtkPolyDataMapper *DcellMapper;
 //	vtkPolyDataMapper *bondMapper;
 //	vtkPolyDataMapper *FDcellMapper;
@@ -164,6 +175,7 @@ public:
     bool reset;
     bool display_spheres;
     double diameter;
+    int display_mode;
 //    QString celltype_colour[10];
     QColor celltype_colour[10];
     QString casename;

@@ -117,9 +117,6 @@ private slots:
     void showGradient2D();
     void setSavePosStart();
 
-    void on_radioButton_oxygen_clicked();
-    void on_radioButton_glucose_clicked(bool checked);
-
     void onSelectConstituent();
 
     void on_verticalSliderTransparency_sliderMoved(int position);
@@ -134,7 +131,6 @@ private slots:
     void on_comboBox_CELLCOLOUR_3_currentIndexChanged(int index);
     void on_comboBox_CELLCOLOUR_4_currentIndexChanged(int index);
 
-    void on_checkBox_display_spheres_toggled(bool checked);
     void on_lineEdit_diameter_textChanged();
 
     void on_pushButtonGetCellMLFile_clicked();
@@ -155,15 +151,11 @@ public slots:
  //   void on_buttonButton_constituent_clicked();
     void buttonClick_constituent(QAbstractButton* button);
     void buttonClick_plane(QAbstractButton* button);
-    void buttonClick_canvas(QAbstractButton* button);
+    void buttonClick_display(QAbstractButton* button);
     void textChanged_fraction(QString text);
 	void textEdited_fraction(QString text);
     void setupConc(int nc, bool *used);
 
-//    void on_cbox_USE_DRUG_A_toggled(bool checked);
-//    void on_cbox_DRUG_A_SIMULATE_METABOLITE_toggled(bool checked);
-//    void on_cbox_USE_DRUG_B_toggled(bool checked);
-//    void on_cbox_DRUG_B_SIMULATE_METABOLITE_toggled(bool checked);
     void on_line_CELLPERCENT_1_textEdited(QString pc1_str);
     void on_line_CELLPERCENT_2_textEdited(QString pc2_str);
 private:
@@ -182,12 +174,6 @@ private:
     void disableUseGlucose();
     void enableUseTracer();
     void disableUseTracer();
-//    void enableUseSN30K();
-//    void disableUseSN30K();
-//    void enableUseDrugA();
-//    void disableUseDrugA();
-//    void enableUseDrugB();
-//    void disableUseDrugB();
     void enableUseTreatmentFile();
     void disableUseTreatmentFile();
 
