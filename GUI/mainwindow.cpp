@@ -190,7 +190,7 @@ MainWindow::MainWindow(QWidget *parent)
 //    widget_canvas->setFixedHeight(CANVAS_WIDTH);
 
     pushButtonLoadCellMLFile->setEnabled(false);
-    tabs->setCurrentIndex(3);   //tab_run
+    tabs->setCurrentIndex(4);   //tab_run
     radioButton_display_squad->setChecked(true);
     cellML_loaded = true;   ////////false;
 
@@ -1735,7 +1735,8 @@ void MainWindow::runServer()
     if (Global::showingVTK) {
         goToVTK();
     } else {
-        goToOutputs();
+//        goToOutputs();
+        goToVTK();
     }
     // Disable parts of the GUI
     action_run->setEnabled(false);

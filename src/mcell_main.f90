@@ -55,15 +55,15 @@ do i = 1, cnt
     endif
 end do
 
-do irun = 1,2
+do irun = 1,1
 	inbuflen = len(infile)
 	outbuflen = len(outfile)
 	write(*,*) 'call execute'
 !	write(nfrun,*) 'infile: ',infile
 !	write(nfrun,*) 'outfile: ',outfile
 	call execute(ncpu,infile,inbuflen,outfile,outbuflen)
-	!call cpu_time(t1)
-!	t1 = wtime()
+!	call cpu_time(t1)
+	t1 = omp_get_wtime()
 	write(*,*) 'did execute: nsteps, DELTA_T: ',nsteps, DELTA_T
 !	nsumm_interval = (60*60)/DELTA_T   ! number of time steps per hour
 !	write(*,*) 'nsumm_interval: ',nsumm_interval
@@ -80,8 +80,8 @@ do irun = 1,2
 !		endif
 	enddo
 	call terminate_run(res)
-!	!call cpu_time(t2)
-!	t2 = wtime()
-!	write(*,*) 'time: ',t2-t1
+!	call cpu_time(t2)
+	t2 = omp_get_wtime()
+	write(*,*) 'time: ',t2-t1
 enddo
 end 

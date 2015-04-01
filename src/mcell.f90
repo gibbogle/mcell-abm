@@ -2,7 +2,7 @@
 module mcell_mod
 use global
 use geometry
-!use newton
+use solve
 
 implicit none
 
@@ -42,6 +42,12 @@ read(nfin,*) nt_anim
 !read(nfin,*) Fjigglefactor
 !read(nfin,*) Mjigglefactor
 read(nfin,*) cellmlfile
+read(nfin,*) growth_rate(1,1)	! dorsal-bottom
+read(nfin,*) growth_rate(1,2)	! dorsal-middle
+read(nfin,*) growth_rate(1,3)	! dorsal-top
+read(nfin,*) growth_rate(2,1)	! ventral-bottom
+read(nfin,*) growth_rate(2,2)	! ventral-middle
+read(nfin,*) growth_rate(2,3)	! ventral-top
 close(nfin)
 
 !NX = nb0
@@ -149,19 +155,19 @@ endif
 if (allocated(v3D)) then
 	deallocate(v3D)
 endif
-if (allocated(Jac)) then
-	deallocate(Jac)
-endif
+!if (allocated(Jac)) then
+!	deallocate(Jac)
+!endif
 allocate(mcell(Ncirc,Nlong))
 allocate(mcell0(Ncirc,Nlong))
 allocate(vbase(Ncirc,3))
 !allocate(v1(Ncirc,3))
 if (Ndim == 2) then
 	allocate(v2D(2*Ncirc*Nlong))
-	allocate(Jac(2*Ncirc*Nlong,2*Ncirc*Nlong))
+!	allocate(Jac(2*Ncirc*Nlong,2*Ncirc*Nlong))
 else
 	allocate(v3D(3*Ncirc*Nlong))
-	allocate(Jac(3*Ncirc*Nlong,3*Ncirc*Nlong))
+!	allocate(Jac(3*Ncirc*Nlong,3*Ncirc*Nlong))
 endif
 ! nitsol work space
 if (allocated(rwork)) then
@@ -221,103 +227,14 @@ do icirc = 1,Ncirc
 enddo
 end subroutine
 
-!-----------------------------------------------------------------------------------------
-! xcur is the array containing the current x value, fcur 
-! is f(xcur) on output, rpar and ipar are, respectively, real 
-! and integer parameter/work arrays for use by the subroutine,
-! and itrmf is an integer termination flag.  The meaning of
-! itrmf is as follows:
-!   0 => normal termination; desired function value calculated.
-!   1 => failure to produce f(xcur).
-!-----------------------------------------------------------------------------------------
-subroutine fnit(n, xcur, fcur, rpar, ipar, itrmf)
-integer :: n, ipar(*), itrmf
-real(REAL_KIND) :: xcur(*), fcur(*), rpar(*)
-integer :: icirc, ilong, nd, k, kd, nvars, i
-real(REAL_KIND) :: F(3), fmax(3)
-
-nd = Ndim
-nvars = nd*Ncirc*Nlong
-if (n /= nvars) then
-	write(*,*) 'ERROR: fnit: n != nvars: ',n,nvars
-	stop
-endif
-nd = Ndim
-do ilong = 1,Nlong
-	do icirc = 1,Ncirc
-		call getForce(nd,xcur,icirc,ilong,F)
-		do kd = 1,nd
-			k = (ilong-1)*nd*Ncirc + (icirc-1)*nd + kd 
-			fcur(k) = F(kd)
-		enddo
-	enddo
-enddo
-if (istep > nramp) then
-	fb = 0
-	call getBendForces(xcur,fb)
-	fcur(1:n) = fcur(1:n) + fb
-	fb = 0
-	call getCollisionForces(xcur,fb)
-	fcur(1:n) = fcur(1:n) + fb
-endif
-itrmf = 0
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-! Dummy
-!-----------------------------------------------------------------------------------------
-subroutine jacv(n, xcur, fcur, ijob, v, z, rpar, ipar, itrmjv)
-integer :: n, ijob, ipar(*), itrmjv
-real(REAL_KIND) :: xcur(*), fcur(*), v, z, rpar(*)
-
-end subroutine
-
-!-----------------------------------------------------------------------------------------
-!-----------------------------------------------------------------------------------------
-subroutine nitsolve(v,res)
-implicit none
-external ddot
-external dnrm2
-real(REAL_KIND) :: ddot, dnrm2
-real(REAL_KIND) :: v(*)
-integer :: n, k, i, j, kd
-real(REAL_KIND) :: res, F(3)
-integer :: input(10), info(6), iterm, ipar(1000)
-real(REAL_KIND) :: ftol, stptol, rpar(1000)
-
-n = Ndim*Ncirc*Nlong
-!kdmax = 20
-!nwork = n*(kdmax+5)+kdmax*(kdmax+3) + 1000	! just for good luck
-!allocate(rwork(nwork))
-rwork = 0
-input = 0
-info = 0
-ipar = 0
-rpar = 0
-input(3) = nitsolver
-ftol = 2.0d-5
-stptol = 2.0d-5
-call nitsol(n, v, fnit, jacv, ftol, stptol, input, info, rwork, rpar, ipar, iterm, ddot, dnrm2)
-!write(*,*) 'v'
-!write(*,'(10f7.4)') v(1:n)
-!write(*,*) 'f'
-!write(*,'(10f7.4)') rwork(1:n)
-!deallocate(rwork)
-!write(nflog,*) 'nitsolved: iterm: ',iterm
-end subroutine
-
 !--------------------------------------------------------------------------------
 ! Programmed test case for cell shape change.
-! Case 1:
-! width(2) at x = Rinitial  -> 1.5*width0
-!          at x = -Rinitial -> 0.5*width0
-! as istep -> nstep_var
 !--------------------------------------------------------------------------------
 subroutine updateWidths
 integer :: ilong, icirc, ivar
 real(REAL_KIND) :: x, y, z, ymid, tfactor, xfactor, yfactorx, yfactorz, zfactor, deltay, deltaz, cyz
-real(REAL_KIND) :: deltay_max = 0.6
-real(REAL_KIND) :: deltaz_max = 0.35
+real(REAL_KIND) :: deltay_max = 0.0	!0.6
+real(REAL_KIND) :: deltaz_max = 0.0	!0.35
 real(REAL_KIND) :: t_start = 60		! time until bending start (min)
 real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
 integer :: nstep_start
@@ -354,6 +271,53 @@ do ilong = 1,Nlong
 enddo
 end subroutine
 
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+subroutine updateWidths6
+integer :: ilong, icirc, ivar
+real(REAL_KIND) :: x, fx, fy, ymid, tfactor, cyz
+real(REAL_KIND) :: t_start = 10		! time until bending start (min)
+!real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
+integer :: nstep_start
+!integer :: nstep_var
+integer :: isection	! 1 = bottom half, 2 = top half
+
+nstep_start = t_start/DELTA_T
+if (istep <= nstep_start) return
+!nstep_var = t_var/DELTA_T
+!write(nflog,*) 'nstep_var: ',nstep_var
+!nstep_var = (deltay_max/0.1)*40.		! sets a valid rate
+!ivar = istep - nstep_start
+!if (ivar <= nstep_var) then
+!	tfactor = (ivar-1.0)/(nstep_var - 1.0)
+!else
+!	tfactor = 1.0
+!endif
+ymid = (1 + Nlong)/2.
+do ilong = 1,Nlong
+	if (ilong <= ymid) then
+		isection = 1
+		fy = (ilong-1)/(ymid-1)
+	else
+		isection = 2
+		fy = (ilong-ymid)/(Nlong - ymid)
+	endif
+	
+	do icirc = 1,Ncirc
+		x = mcell0(icirc,ilong)%centre(1)
+		fx = (x + Rinitial)/(2*Rinitial)
+		cyz = (1-fx)*(1-fy)*growth_rate(2,isection) + fx*(1-fy)*growth_rate(1,isection)  &
+		    + (1-fx)*fy*growth_rate(2,isection+1) + fx*fy*growth_rate(1,isection+1)
+		cyz = (1 + DELTA_T*cyz)
+!		if (ilong == int(ymid)) write(nflog,*) 'cyz: ',cyz
+		mcell(icirc,ilong)%width(2) = cyz*mcell(icirc,ilong)%width(2)
+		if (cyz < 1) then		! adjust width(1) and width(3) to preserve volume
+			mcell(icirc,ilong)%width(1) = mcell(icirc,ilong)%width(1)/sqrt(cyz)
+			mcell(icirc,ilong)%width(3) = mcell(icirc,ilong)%width(3)/sqrt(cyz)
+		endif
+	enddo
+enddo
+end subroutine
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 subroutine get_summary(summaryData) BIND(C)
@@ -444,7 +408,7 @@ if (mod(istep,10) == 0) then
 endif
 ok = .true.
 
-call updateWidths
+call updateWidths6
 if (Ndim == 2) then
 	pv => v2D
 else

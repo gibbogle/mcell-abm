@@ -9,11 +9,11 @@ Params::Params()
 "Ncirc",
 "Number of circumferential cells"},
 
-{"NLONG", 60, 0, 50,
+{"NLONG", 30, 0, 50,
 "Nlong",
 "Number of longitudinal cells"},
 
-{"NHOURS", 20.0, 0.0, 0.0,
+{"NHOURS", 8.0, 0.0, 0.0,
 "Number of hours",
 "Length of the simulation.(hours)"},
 
@@ -68,6 +68,31 @@ Params::Params()
 {"CELLML_FILE", 0, 0, 0,
 "",
 "CellML file for the cell growth model"},
+
+{"DORSAL_BOTTOM", 0, 0, 0,
+ "Dorsal-bottom growth rate",
+ "Growth rate at the bottom of the tube, dorsal side"},
+
+{"DORSAL_MIDDLE", 0.00208, 0, 0,
+ "Dorsal-middle growth rate",
+ "Growth rate at the middle of the tube, dorsal side"},
+
+{"DORSAL_TOP", 0, 0, 0,
+ "Dorsal-top growth rate",
+ "Growth rate at the top of the tube, dorsal side"},
+
+{"VENTRAL_BOTTOM", 0, 0, 0,
+ "Ventral-bottom growth rate",
+ "Growth rate at the bottom of the tube, ventral side"},
+
+{"VENTRAL_MIDDLE", 0, 0, 0,
+ "Ventral-middle growth rate",
+ "Growth rate at the middle of the tube, ventral side"},
+
+{"VENTRAL_TOP", 0, 0, 0,
+ "Ventral-top growth rate",
+ "Growth rate at the top of the tube, ventral side"},
+
 
 // Entries after this point are QMyLabel dummies, to enable display of explanatory info  - no input data is transmitted
 

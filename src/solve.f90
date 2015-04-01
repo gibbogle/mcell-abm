@@ -1,661 +1,886 @@
-! To solve cell motion using RK (r8_rkf45)
-
+! Solver code using nitsol
 module solve
-use ellipsoid
-use rkf45
-use pardiso_mod
+
+use global
+use geometry
 
 implicit none
 
-real(REAL_KIND), allocatable :: F(:,:,:)    ! cell-cell forces
-real(REAL_KIND), allocatable :: M(:,:,:)    ! cell-cell moments
-!real(REAL_KIND), allocatable :: cp(:,:,:)  ! offset of the contact points from centres
-!integer, allocatable :: nbrs(:)             ! number of cell neighbours
-!integer, allocatable :: nbrlist(:,:)        ! cell neighbours
+contains
 
-integer :: np
-logical :: fderiv_ok
+!-----------------------------------------------------------------------------------------
+! xcur is the array containing the current x value, fcur 
+! is f(xcur) on output, rpar and ipar are, respectively, real 
+! and integer parameter/work arrays for use by the subroutine,
+! and itrmf is an integer termination flag.  The meaning of
+! itrmf is as follows:
+!   0 => normal termination; desired function value calculated.
+!   1 => failure to produce f(xcur).
+! I can't any reason why this cannot be made parralel with OMP
+!-----------------------------------------------------------------------------------------
+subroutine fnit(n, xcur, fcur, rpar, ipar, itrmf)
+integer :: n, ipar(*), itrmf
+real(REAL_KIND) :: xcur(*), fcur(*), rpar(*)
+integer :: icirc, ilong, nd, k, kd, nvars, i, kc
+real(REAL_KIND) :: F(3), fmax(3)
 
-    contains
+nd = Ndim
+nvars = nd*Ncirc*Nlong
+if (n /= nvars) then
+	write(*,*) 'ERROR: fnit: n != nvars: ',n,nvars
+	stop
+endif
+nd = Ndim
 
-!------------------------------------------------------------------------------------------
-! To construct the Jacobian matrix:
-!
-!         col 1        col 2      col 3      ...  col n
-! row 1: df(1)/dx(1) df(1)/dx(2) df(1)/dx(3) ... df(1)/dx(n)
-! row 2: df(2)/dx(1) df(2)/dx(2) df(2)/dx(3) ... df(2)/dx(n)
-! ...
-! row n: df(n)/dx(1) df(n)/dx(2) df(n)/dx(3) ... df(n)/dx(n)
-!
-! where dx(i)/dt = f(i)
-! Jac(i,j) = df(i)/dx(j) = Jac(row,col), 
-!------------------------------------------------------------------------------------------
-subroutine JacobianSlow(Jac,f,x,n,ok)
-integer :: n
-real(REAL_KIND) :: x(n), Jac(n,n), f(n)
-logical :: ok
-real(REAL_KIND), allocatable :: xx(:), ff(:)
-real(REAL_KIND) :: t
-integer :: i, j, icell, jcell
-real(REAL_KIND), parameter :: tol = 1.0e-8
-real(REAL_KIND), parameter :: dx = 0.001
-
-allocate(xx(n))
-!allocate(f(n))
-allocate(ff(n))
-
-Jac = 0
-j_deriv = 0
-call fderiv(t,x,f)
-ok = fderiv_ok
-if (.not.ok) return
-!write(*,'(10e12.3)') f
-xx = x
-do j = 1,n
-    j_deriv = j
-	xx(j) = x(j) + dx
-	call fderiv(t,xx,ff)
-    ok = fderiv_ok
-    if (.not.ok) return
-    !if (j == 11) then
-    !    write(*,*) 'f and ff for j = ',j
-    !    do i = 1,n
-    !        write(*,'(i4,3e12.3)') i,f(i),ff(i),(ff(i) - f(i))/dx
-    !    enddo
-    !endif
-	do i = 1,n
-    	Jac(i,j) = (ff(i) - f(i))/dx
-        if (abs(Jac(i,j)) < tol) then
-            Jac(i,j) = 0
-        endif
-        icell = (i-1)/3 + 1
-        jcell = (j-1)/3 + 1
-        !if (j == 11) then
-        !    write(*,'(a,4i4,3f10.3)') 'Slow Jac: ',i,j,icell,jcell,ff(i),f(i),Jac(i,j)
-        !endif
-        if (abs(Jac(i,j)) > 2) then
-            write(*,'(a,4i4,3f10.4)') 'Big Jac: ',i,j,icell,jcell,ff(i),f(i),Jac(i,j)
-        endif
-	enddo
-	xx(j) = x(j)
-!    write(*,*) 'j, Jac(8,11): ',j,Jac(8,11)
+!$omp parallel do private(ilong, icirc, kd, k, F)
+do kc = 1,Ncirc*Nlong
+ilong = mod(kc-1,Nlong) + 1
+icirc = (kc - ilong)/Nlong + 1
+!do ilong = 1,Nlong
+!	do icirc = 1,Ncirc
+		call getForce(nd,xcur,icirc,ilong,F)
+		do kd = 1,nd
+			k = (ilong-1)*nd*Ncirc + (icirc-1)*nd + kd 
+			fcur(k) = F(kd)
+		enddo
+!	enddo
+!enddo
 enddo
-deallocate(xx)
-!deallocate(f)
-deallocate(ff)
-ok = .true.
+!$omp end parallel do
+
+if (istep > nramp) then
+	fb = 0
+	call getBendForces(xcur,fb)
+	fcur(1:n) = fcur(1:n) + fb
+	fb = 0
+	call getCollisionForces(xcur,fb)
+	fcur(1:n) = fcur(1:n) + fb
+endif
+itrmf = 0
 end subroutine
 
-!------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------
-logical function inlist(i,list,n)
-integer :: i, n, list(:)
-integer :: k
+!-----------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------
+subroutine nitsolve(v,res)
+implicit none
+external ddot
+external dnrm2
+real(REAL_KIND) :: ddot, dnrm2
+real(REAL_KIND) :: v(*)
+integer :: n, k, i, j, kd
+real(REAL_KIND) :: res, F(3)
+integer :: input(10), info(6), iterm, ipar(1000)
+real(REAL_KIND) :: ftol, stptol, rpar(1000)
 
-do k = 1,n
-	if (list(k) == i) then
-		inlist = .true.
-		return
-	endif
-enddo
-inlist = .false.
-end function
-
-!------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------
-subroutine remove(i,list,n)
-integer :: i, n, list(:)
-integer :: k
-
-do k = 1,n
-	if (list(k) == i) then
-		list(k) = -i
-		return
-	endif
-enddo
+n = Ndim*Ncirc*Nlong
+!kdmax = 20
+!nwork = n*(kdmax+5)+kdmax*(kdmax+3) + 1000	! just for good luck
+!allocate(rwork(nwork))
+rwork = 0
+input = 0
+info = 0
+ipar = 0
+rpar = 0
+input(3) = nitsolver
+ftol = 2.0d-5
+stptol = 2.0d-5
+call nitsol(n, v, fnit, jacv, ftol, stptol, input, info, rwork, rpar, ipar, iterm, ddot, dnrm2)
 end subroutine
 
-!------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------
-logical function SameCentre(c1,c2)
-real(REAL_KIND) :: c1(3), c2(3)
-integer :: i
-real(REAL_KIND) :: tol = 1.0e-3
+!-----------------------------------------------------------------------------------------
+! Dummy, not used
+!-----------------------------------------------------------------------------------------
+subroutine jacv(n, xcur, fcur, ijob, v, z, rpar, ipar, itrmjv)
+integer :: n, ijob, ipar(*), itrmjv
+real(REAL_KIND) :: xcur(*), fcur(*), v, z, rpar(*)
 
-SameCentre = .false.
-if (abs(c1(1)-c2(1)) > tol) return
-if (abs(c1(2)-c2(2)) > tol) return
-if (abs(c1(3)-c2(3)) > tol) return
-write(*,'(a,6f8.4)') 'Same centres: ',c1,c2
-SameCentre = .true.
+end subroutine
+
+!-----------------------------------------------------------------------------------------
+! Falpha_axial > 0, therefore overlap = compression = x > 0 => faxial > 0
+!-----------------------------------------------------------------------------------------
+real(REAL_KIND) function faxial(x)
+real(REAL_KIND) :: x
+logical, parameter :: linear = .false.
+
+if (linear) then
+	faxial = Falpha_axial*x
+else
+	if (x >= 0) then
+		faxial = Falpha_axial*x**2
+	else
+		faxial = -Falpha_axial*x**2
+	endif
+endif
 end function
 
-!------------------------------------------------------------------------------------------
-! Note: only those forces (F, M) on cells that are neighbours of the cell associated with
-! variable j are changed when xx(j) is varied.  Therefore it is necessary to compute
-! only a small subset of the cell-cell forces.  The other F, M are zero.
-! df(i)/dx(j) is non-zero (variable i belonging to cell i1) only in the case that cell i1
-! owns variable j or has a neighbour cell i2 that owns variable j.  This means that when
-! looking at the variation of x(j), we need only to compute interactions for cell i1 and
-! neighbours cells of i1 that own variable j. 
-! We can precompute the list of cells that need to be considered for variable j.  This 
-! could perhaps be done in the j=0 pass, but for clarity maybe not.
-!------------------------------------------------------------------------------------------
-subroutine JacobianFast(Jac, f0, x, n, ok)
-real(REAL_KIND) :: Jac(n,n), f0(n), x(n)
-integer :: n
-logical :: ok
-real(REAL_KIND), allocatable :: xx(:), f1(:), Fbase(:,:,:), Mbase(:,:,:)
-real(REAL_KIND) :: t
-integer :: i, j, jj
-integer :: i1, i2, jn, k1, k2, k, nzero, ntzero, nfeval, kpar=0
-real(REAL_KIND) :: a1, b1, centre1(3), orient1(3), a2, b2, centre2(3), orient2(3), s1, s2, delta
-real(REAL_KIND) :: FF(3), MM1(3), MM2(3), Fsum(3), Msum(3), R
-type(cell_type), pointer :: p1, p2
-integer, allocatable :: connected(:,:), nconnected(:)
-logical :: hit
-logical :: clean_list = .true.
-real(REAL_KIND), parameter :: tol = 1.0e-8
-real(REAL_KIND), parameter :: dx = 0.001
+!-----------------------------------------------------------------------------------------
+! Falpha_shear > 0, therefore compression = x > 0 => fshear > 0
+!-----------------------------------------------------------------------------------------
+real(REAL_KIND) function fshear(x)
+real(REAL_KIND) :: x
+logical, parameter :: linear = .true.
 
-allocate(xx(n))
-!allocate(f0(n))
-allocate(f1(n))
-allocate(connected(n,MAX_NBRS+1))
-allocate(nconnected(n))
-allocate(Fbase(ncells,ncells,3))
-if (np == 6) then
-    allocate(Mbase(ncells,ncells,3))
+if (linear) then
+	fshear = Falpha_shear*x
+else
+	if (x >= 0) then
+		fshear = Falpha_shear*x**2
+	else
+		fshear = -Falpha_shear*x**2
+	endif
+endif
+end function
+
+!-----------------------------------------------------------------------------------------
+! Get total force on cell (i,j)
+! 
+!           o (i,j+1)
+!           |
+!           | F_U
+!           ^
+! (i-1,j)   |       (i+1,j)
+!  o---->---O--->----o
+!     F_L   |   F_R
+!           ^
+!           | F_D
+!           |
+!           o (i,j-1)
+!
+!
+! nd = 2 (2D) or 3 (3D)
+! 2D case: the variable numbering is:
+!	kx = (j-1)*2*Ncirc + (i-1)*2 + 1 for the x value
+!	ky = (j-1)*2*Ncirc + (i-1)*2 + 2 for the y value
+!   The variables are v2D(k): k = 1,..,2*Ncirc*Nlong
+! 3D case: the circ direction wraps around, and the
+! left neighbour of icirc=1 is icirc=Ncirc
+! Note: i = icirc, j = jlong
+!	kx = (j-1)*3*Ncirc + (i-1)*3 + 1 for the x value
+!	ky = (j-1)*3*Ncirc + (i-1)*3 + 2 for the y value
+!	kz = (j-1)*3*Ncirc + (i-1)*3 + 3 for the z value
+! Optionally add shear force and an internal pressure force
+! Note: bending force is not added here, because it is computed as moments, and the
+! moment forces associated with a given cell are also applied to its four neighbours.
+!-----------------------------------------------------------------------------------------
+subroutine getForce(nd,v,icirc,jlong,Fsum) !bind(C,name='getForce')
+!use, intrinsic :: iso_c_binding
+!integer(c_int) :: icirc, jlong, nd
+!real(c_double) :: v(*), Fsum(3)
+integer :: icirc, jlong, nd
+real(REAL_KIND) :: v(*), Fsum(3)
+real(REAL_KIND) :: F_L(3), F_R(3), F_D(3), F_U(3), F_S(3), F_P(3)
+real(REAL_KIND) :: d, factor, R, c(3), cn(3), fx, fy, fz, v_F(3)
+real(REAL_KIND) :: v_P(3), area, sum, press, tens, rampfactor
+integer :: kx, ky, kz		! cell (icirc,j)
+integer :: kxn, kyn, kzn	! neighbour cell (Left, Right, Down or Up)
+integer :: in, ic
+
+integer :: jl_D, jl_U, ic_L, ic_R, kd, k
+real(REAL_KIND) :: v_L(3), v_R(3), v_D(3), v_U(3), v_N(3)
+real(REAL_KIND) :: c_LD(3), c_LU(3), c_RD(3), c_RU(3)
+real(REAL_KIND) :: c_L(3), c_R(3), c_D(3), c_U(3), v_LR(3), v_DU(3)
+real(REAL_KIND) :: d_L, d_R, d_LR, d_DU, w_0, w_L, w_R, del, dF(3)
+logical :: is_U, is_D
+
+logical :: compute_shear = .true.
+logical :: dbug = .false.
+
+rampfactor = min(1.0,real(istep)/nramp)
+
+!R = Rinitial
+sum = 0
+do ic = 1,Ncirc
+	kx = (jlong-1)*nd*Ncirc + (ic-1)*nd + 1 
+	kz = kx + 2
+	sum = sum + v(kx)**2 + v(kz)**2
+enddo
+R = sqrt(sum/(nd*Ncirc*Nlong))
+	
+area = dx_init*dx_init
+if (nd == 2) then
+	kx = (jlong-1)*nd*Ncirc + (icirc-1)*nd + 1 
+	ky = kx + 1
+	c = [v(kx),v(ky),0]
+else
+	kx = (jlong-1)*nd*Ncirc + (icirc-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c = [v(kx),v(ky),v(kz)]
+endif
+Fsum = 0
+if (nd == 2) then
+	F_L = 0
+	if (icirc == 1) then			! Left boundary constraint
+		d = v(kx)
+		fx = faxial(-d)
+		F_L = [fx, 0.d0, 0.d0]
+	elseif (icirc > 1) then			! F_L (i-1,j) -> (i,j)
+		kxn = kx - nd
+		kyn = kxn + 1
+		cn = [v(kxn),v(kyn),0]
+		d = distance(c,cn)
+		factor = faxial((mcell(icirc,jlong)%width(1)+mcell(icirc-1,jlong)%width(1))/2 - d)
+		if (d > 0) then
+			F_L = (c - cn)*factor/d
+		else
+			write(*,*) 'Error: F_L: getForce: d = 0'
+			stop
+		endif
+		if (nancomponent(F_L)) then
+			write(*,*) 'bad F_L'
+			stop
+		endif
+	endif
+	
+	F_R = 0
+	if (icirc < Ncirc) then	! F_R (i+1,j) -> (i,j)
+		kxn = kx + nd
+		kyn = kxn + 1
+		cn = [v(kxn),v(kyn),0]
+		d = distance(c,cn)
+		factor = faxial((mcell(icirc,jlong)%width(1)+mcell(icirc+1,jlong)%width(1))/2 - d)
+		if (d > 0) then
+			F_R = (c - cn)*factor/d
+		else
+			write(*,*) 'Error: F_R: getForce: d = 0'
+			stop
+		endif
+		if (nancomponent(F_R)) then
+			write(*,*) 'bad F_R'
+			write(*,*) icirc,jlong,kx,ky,kxn,kyn
+			write(*,*) 'c, cn: ',c,cn
+			write(*,*) 'd: ',d
+			stop
+		endif
+	endif
+	
+	F_D = 0
+	if (jlong == 1) then			! Bottom boundary constraint
+		d = v(ky)
+		fy = faxial(-d)
+		F_D = [0.d0, fy, 0.d0]
+	elseif (jlong > 1) then		! F_D (i,j-1) -> (i,j)
+		kxn = kx - nd*Ncirc
+		kyn = kxn + 1
+		cn = [v(kxn),v(kyn),0]
+		d = distance(c,cn)
+		factor = faxial((mcell(icirc,jlong)%width(2)+mcell(icirc,jlong-1)%width(2))/2 - d)
+		if (d > 0) then
+			F_D = (c - cn)*factor/d
+		else
+			write(*,*) 'Error: F_D: getForce: d = 0'
+			stop
+		endif
+		if (nancomponent(F_D)) then
+			write(*,*) 'bad F_D'
+			stop
+		endif
+	endif
+	
+	F_U = 0
+	if (jlong < Nlong) then	! F_U (icirc,jlong+1) -> (icirc,jlong)
+		kxn = kx + nd*Ncirc
+		kyn = kxn + 1
+		cn = [v(kxn),v(kyn),0]
+		d = distance(c,cn)
+		factor = faxial((mcell(icirc,jlong)%width(2)+mcell(icirc,jlong+1)%width(2))/2 - d)
+		if (d > 0) then
+			F_U = (c - cn)*factor/d
+		else
+			write(*,*) 'Error: F_U: getForce: d = 0'
+			stop
+		endif
+		if (nancomponent(F_U)) then
+			write(*,*) 'bad F_U'
+			stop
+		endif
+	endif
+else
+	F_L = 0
+	if (icirc == 1) then			! Left wrap: (Ncirc,jlong) -> (1,jlong)
+		in = Ncirc
+	elseif (icirc > 1) then			!            (icirc-1,jlong) -> (icirc,jlong)
+		in = icirc - 1
+	endif
+	kxn = (jlong-1)*nd*Ncirc + (in-1)*nd + 1 
+	kyn = kxn + 1
+	kzn = kxn + 2
+	cn = [v(kxn),v(kyn),v(kzn)]
+	v_F = c - cn
+	d = sqrt(dot_product(v_F,v_F))
+	v_F = v_F/d
+	v_L = v_F
+	factor = faxial((mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2 - d)
+	F_L = factor*v_F
+	if (nancomponent(F_L)) then
+		write(*,'(a,3i4,6f8.3)') 'bad F_L: istep, icirc, jlong, c, cn: ',istep, icirc,jlong,c,cn
+		stop
+	endif
+	if (dbug) then
+		write(*,*) 'F_L: istep,icirc,jlong,kx,kxn: ',istep,icirc,jlong,kx,kxn
+		write(*,'(a,3e12.3)') 'c: ',c 
+		write(*,'(a,3e12.3)') 'cn: ',cn 
+		write(*,'(a,3e12.3)') 'dtarget: ',mcell(icirc,jlong)%width(1), mcell(in,jlong)%width(1), (mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2
+		write(*,'(a,3e12.3)') 'd: ',d,factor,(mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2 - d
+	endif
+
+	F_R = 0
+	if (icirc < Ncirc) then	!             (icirc,jlong) <- (icirc+1,jlong)
+		in = icirc+1
+		kxn = kx + nd
+		kyn = kxn + 1
+		kzn = kxn + 2
+	else				! right wrap: (Ncirc,j) <- (1,j)
+		in = 1
+		kxn = (jlong-1)*nd*Ncirc + (in-1)*nd + 1 
+		kyn = kxn + 1
+		kzn = kxn + 2
+	endif	
+	cn = [v(kxn),v(kyn),v(kzn)]
+	v_F = c - cn
+	d = sqrt(dot_product(v_F,v_F))
+	v_F = v_F/d
+	v_R = v_F
+	factor = faxial((mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2 - d)
+	F_R = factor*V_F
+	if (nancomponent(F_R)) then
+		write(*,*) 'bad F_R'
+		write(*,*) icirc,jlong,kx,ky,kxn,kyn
+		write(*,*) 'c, cn: ',c,cn
+		write(*,*) 'd: ',d
+		stop
+	endif
+	if (dbug) then
+		write(*,*) 'F_R: icirc,jlong,kx,kxn: ',icirc,jlong,kx,kxn
+		write(*,'(a,3e12.3)') 'c: ',c 
+		write(*,'(a,3e12.3)') 'cn: ',cn 
+		write(*,'(a,3e12.3)') 'dtarget: ',mcell(icirc,jlong)%width(1), mcell(in,jlong)%width(1), (mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2
+		write(*,'(a,3e12.3)') 'd: ',d,factor
+	endif
+	
+	F_D = 0
+	if (jlong == 1) then			! Bottom boundary constraint
+		fx = 0
+		fz = 0
+		fx = 0.1*faxial(vbase(icirc,1) - v(kx))
+		fy = faxial(vbase(icirc,2) - v(ky))
+		fz = 0.1*faxial(vbase(icirc,3) - v(kz))	
+		F_D = [fx, fy, fz]
+	else		! F_D (i,j-1) -> (i,j)
+		kxn = kx - nd*Ncirc
+		kyn = kxn + 1
+		kzn = kxn + 2
+		cn = [v(kxn),v(kyn),v(kzn)]
+		v_F = c - cn
+		d = sqrt(dot_product(v_F,v_F))
+		v_F = v_F/d
+		factor = faxial((mcell(icirc,jlong)%width(2)+mcell(icirc,jlong-1)%width(2))/2 - d)
+		F_D = factor*v_F
+		if (nancomponent(F_D)) then
+			write(*,*) 'bad F_D'
+			stop
+		endif
+	endif
+	
+	F_U = 0
+	if (jlong < Nlong) then	! (icirc,jlong+1) -> (icirc,jlong)
+		kxn = kx + nd*Ncirc
+		kyn = kxn + 1
+		kzn = kxn + 2
+		cn = [v(kxn),v(kyn),v(kzn)]
+		v_F = c - cn
+		d = sqrt(dot_product(v_F,v_F))
+		v_F = v_F/d
+		factor = faxial((mcell(icirc,jlong)%width(2)+mcell(icirc,jlong+1)%width(2))/2 - d)
+		F_U = factor*v_F
+		if (nancomponent(F_U)) then
+			write(*,*) 'bad F_U'
+			stop
+		endif
+		if (dbug) then
+			write(*,*) 'F_U: icirc,jlong,kx,kxn: ',icirc,jlong,kx,kxn
+			write(*,'(a,3e12.3)') 'c: ',c 
+			write(*,'(a,3e12.3)') 'cn: ',cn 
+			write(*,'(a,3e12.3)') 'dtarget: ',mcell(icirc,jlong)%width(1), mcell(in,jlong)%width(1), (mcell(icirc,jlong)%width(1)+mcell(in,jlong)%width(1))/2
+			write(*,'(a,2e12.3)') 'd: ',d,factor
+		endif
+	else
+		F_U = [0.0d0,rampfactor*tension,0.0d0]		! try adding a tension force
+!		fx = 10*faxial(v1(i,1) - v(kx))
+!		fy = 10*faxial(v1(i,2) - v(ky))
+!		fz = 10*faxial(v1(i,3) - v(kz))
+!		F_U = [fx, fy, fz]
+	endif
 endif
 
-Jac(1:n,1:n) = 0
+ic_L = icirc - 1
+if (icirc == 1) ic_L = Ncirc
 
-! This can be improved by doing it in the j=0 pass, since that will enable dropping of cells that are 
-! neighbours but too far away to interact with cell i1.
-nconnected = 0
-do i1 = 1,ncells
-	p1 => cell_list(i1)
-	k1 = (i1-1)*np
-	do k = 1,np
-		j = k1 + k
-		if (.not.inlist(i1,connected(j,:),nconnected(j))) then
-			nconnected(j) = nconnected(j) + 1
-			connected(j,nconnected(j)) = i1
+ic_R = icirc + 1
+if (icirc == Ncirc) ic_R = 1
+
+if (jlong == 1) then
+	jl_U = jlong + 1
+	is_D = .false.
+	is_U = .true.
+elseif (jlong == Nlong) then
+	jl_D = jlong - 1
+	is_D = .true.
+	is_U = .false.
+else
+	jl_D = jlong - 1
+	jl_U = jlong + 1
+	is_D = .true.
+	is_U = .true.
+endif
+
+F_S = 0
+if (compute_shear) then
+! Shear force
+w_0 = sqrt( mcell(icirc,jlong)%width(1)**2 + mcell(icirc,jlong)%width(2)**2)
+if (is_D) then
+	kx = (jl_D-1)*nd*Ncirc + (ic_L-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_LD = [v(kx),v(ky),v(kz)]
+!	v_L = mcell(icirc,jlong)%centre - mcell(ic_L,jl_D)%centre
+	v_L = c - c_LD
+	d_L = sqrt(dot_product(v_L,v_L))
+	v_L = v_L/d_L
+	w_L = sqrt( mcell(ic_L,jl_D)%width(1)**2 + mcell(ic_L,jl_D)%width(2)**2)
+	del = (w_0 + w_L)/2 - d_L
+	F_S = F_S + fshear(del)*v_L
+	
+	kx = (jl_D-1)*nd*Ncirc + (ic_R-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_RD = [v(kx),v(ky),v(kz)]
+!	v_R = mcell(icirc,jlong)%centre - mcell(ic_R,jl_D)%centre
+	v_R = c - c_RD
+	d_R = sqrt(dot_product(v_R,v_R))
+	v_R = v_R/d_R
+	w_R = sqrt( mcell(ic_R,jl_D)%width(1)**2 + mcell(ic_R,jl_D)%width(2)**2)
+	del = (w_0 + w_R)/2 - d_R
+	F_S = F_S + fshear(del)*v_R
+endif
+if (is_U) then
+	kx = (jl_U-1)*nd*Ncirc + (ic_R-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_RU = [v(kx),v(ky),v(kz)]
+!	v_R = mcell(icirc,jlong)%centre - mcell(ic_R,jl_U)%centre
+	v_R = c - c_RU
+	d_R = sqrt(dot_product(v_R,v_R))
+	v_R = v_R/d_R
+	w_R = sqrt( mcell(ic_R,jl_U)%width(1)**2 + mcell(ic_R,jl_U)%width(2)**2)
+	del = (w_0 + w_R)/2 - d_R
+	F_S = F_S + fshear(del)*v_R
+	
+	kx = (jl_U-1)*nd*Ncirc + (ic_L-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_LU = [v(kx),v(ky),v(kz)]
+!	v_L = mcell(icirc,jlong)%centre - mcell(ic_L,jl_U)%centre
+	v_L = c - c_LU
+	d_L = sqrt(dot_product(v_L,v_L))
+	v_L = v_L/d_L
+	w_L = sqrt( mcell(ic_L,jl_U)%width(1)**2 + mcell(ic_L,jl_U)%width(2)**2)
+	del = (w_0 + w_L)/2 - d_L
+	F_S = F_S + fshear(del)*v_L
+endif
+endif
+
+! Pressure force - needs fixing: v_P should be outward normal vector, need area
+if (Pressure > 0) then
+	if (is_D) then
+		kx = (jl_D-1)*nd*Ncirc + (icirc-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_D = [v(kx),v(ky),v(kz)]
+	else
+		c_D = c
+	endif
+	if (is_U) then
+		kx = (jl_U-1)*nd*Ncirc + (icirc-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_U = [v(kx),v(ky),v(kz)]
+	else
+		c_U = c
+	endif
+	v_DU = c_U - c_D
+	d_DU = sqrt(dot_product(v_DU,v_DU))
+	v_DU = v_DU/d_DU
+	kx = (jlong-1)*nd*Ncirc + (ic_L-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_L = [v(kx),v(ky),v(kz)]
+	kx = (jlong-1)*nd*Ncirc + (ic_R-1)*nd + 1 
+	ky = kx + 1 
+	kz = kx + 2
+	c_R = [v(kx),v(ky),v(kz)]
+	v_LR = c_R - c_L
+	d_LR = sqrt(dot_product(v_LR,v_LR))
+	v_LR = v_LR/d_LR
+	! The pressure force is normal to v_LR and v_DU, and proportional to the area,
+	! which is (roughly) proportional to d_LU*d_LR
+	! The outward vector is v_LR x v_DU
+	call cross_product(v_LR, v_DU, v_P)
+	d = sqrt(dot_product(v_P,v_P))
+	v_P = v_P/d
+!	area = d_LR*d_DU
+!	if (jlong == 1 .or. jlong == Nlong) area = 2*area
+	area = mcell(icirc,jlong)%area
+	F_P = Pressure*area*rampfactor*v_P
+!	if (jlong == Nlong .or. jlong == Nlong - 2) then
+!	if (icirc == 1) then
+!		write(nflog,'(2i4,6f8.4)') icirc,jlong,v_P,F_P
+!	endif
+else
+	F_P = 0
+endif		
+
+!write(*,'(a,3f8.3)') 'F_P: ',F_P
+Fsum = F_L + F_R + F_D + F_U + F_S + F_P
+if (dbug) then
+	write(*,'(7i6)') nd,icirc,jlong,kx,ky,kxn,kyn
+	write(*,'(a,3e12.3)') 'F_L: ',F_L(1:nd)
+	write(*,'(a,3e12.3)') 'F_R: ',F_R(1:nd)
+	write(*,'(a,3e12.3)') 'F_D: ',F_D(1:nd)
+	write(*,'(a,3e12.3)') 'F_U: ',F_U(1:nd)
+endif
+!if (Fsum(1) == 0) stop
+end subroutine
+
+!-----------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------
+subroutine getShearForces(fsh)
+real(REAL_KIND) :: fsh(:)
+integer :: icirc, ilong, il_D, il_U, ic_L, ic_R, kd, k
+real(REAL_KIND) :: v_L(3), v_R(3), d_L, d_R, w_0, w_L, w_R, del, dF(3)
+logical :: is_U, is_D
+
+do ilong = 1,Nlong
+	if (ilong == 1) then
+		il_U = ilong + 1
+		is_D = .false.
+		is_U = .true.
+	elseif (ilong == Nlong) then
+		il_D = ilong - 1
+		is_D = .true.
+		is_U = .false.
+	else
+		il_D = ilong - 1
+		il_U = ilong + 1
+		is_D = .true.
+		is_U = .true.
+	endif
+	do icirc = 1,Ncirc
+		dF = 0
+		w_0 = sqrt( mcell(icirc,ilong)%width(1)**2 + mcell(icirc,ilong)%width(2)**2)
+		ic_L = icirc - 1
+		if (icirc == 1) ic_L = Ncirc
+		ic_R = icirc + 1
+		if (icirc == Ncirc) ic_R = 1
+		if (is_D) then
+			v_L = mcell(icirc,ilong)%centre - mcell(ic_L,il_D)%centre
+			d_L = sqrt(dot_product(v_L,v_L))
+			v_L = v_L/d_L
+			! compression = expected separation - d
+			w_L = sqrt( mcell(ic_L,il_D)%width(1)**2 + mcell(ic_L,il_D)%width(2)**2)
+			del = (w_0 + w_L)/2 - d_L
+			dF = dF + fshear(del)*v_L
+			v_R = mcell(icirc,ilong)%centre - mcell(ic_R,il_D)%centre
+			d_R = sqrt(dot_product(v_R,v_R))
+			v_R = v_R/d_R
+			! compression = expected separation - d
+			w_R = sqrt( mcell(ic_R,il_D)%width(1)**2 + mcell(ic_R,il_D)%width(2)**2)
+			del = (w_0 + w_R)/2 - d_R
+			dF = dF + fshear(del)*v_R
 		endif
-	enddo
-	do jn = 1,p1%nbrs
-		i2 = p1%nbrlist(jn)
-		k2 = (i2-1)*np
-		do k = 1,np
-			j = k1 + k
-			if (.not.inlist(i2,connected(j,:),nconnected(j))) then
-				nconnected(j) = nconnected(j) + 1
-				connected(j,nconnected(j)) = i2
-			endif
+		if (is_U) then
+			v_R = mcell(icirc,ilong)%centre - mcell(ic_R,il_U)%centre
+			d_R = sqrt(dot_product(v_R,v_R))
+			v_R = v_R/d_R
+			! compression = expected separation - d
+			w_R = sqrt( mcell(ic_R,il_U)%width(1)**2 + mcell(ic_R,il_U)%width(2)**2)
+			del = (w_0 + w_R)/2 - d_R
+			dF = dF + fshear(del)*v_R
+			v_L = mcell(icirc,ilong)%centre - mcell(ic_L,il_U)%centre
+			d_L = sqrt(dot_product(v_L,v_L))
+			v_L = v_L/d_L
+			! compression = expected separation - d
+			w_L = sqrt( mcell(ic_L,il_U)%width(1)**2 + mcell(ic_L,il_U)%width(2)**2)
+			del = (w_0 + w_L)/2 - d_L
+			dF = dF + fshear(del)*v_L
+		endif
+		do kd = 1,Ndim
+			k = (ilong-1)*Ndim*Ncirc + (icirc-1)*Ndim + kd 
+			fsh(k) = dF(kd)
 		enddo
 	enddo
 enddo
+end subroutine
 
-!do j = 1,n
-!	write(nflog,'(19i4)') j,nconnected(j),connected(j,	1:nconnected(j))
-!enddo
-write(*,*)
-xx = x
-nfeval = 0
-ntzero = 0
-F = 0
-if (np == 6) M = 0
+!-----------------------------------------------------------------------------------------
+! We need to look at pairs of cells that are close enough to experience repulsive force.
+!-----------------------------------------------------------------------------------------
+subroutine getCollisionForces(v,fc)
+real(REAL_KIND) :: v(*), fc(:)
+integer :: nd
+real(REAL_KIND) :: c0(3), c1(3), c2(3), v1(3), v2(3)
+real(REAL_KIND) :: d, w1, w2, dthresh, dlimit, theta, fun, f(3), dmin
+integer :: ic1, ic2, icirc1, icirc2, jlong1, jlong2, kx, ky, kz, kd, k
+integer :: ic1_lo, ic1_hi, ic2_lo, ic2_hi, jl1_lo, jl1_hi, jl2_lo, jl2_hi
+integer :: Nthresh = 30
+real(REAL_KIND) :: alpha_collide = 0.0001
 
-do j = 0,n		! column index, except for j=0 which evaluates the current f(:)
-	if (j /= 0) then
-		xx(j) = x(j) + dx
-		F = Fbase
-		if (np == 6) M = Mbase
-    endif
-	nzero = 0
-	do i1 = 1,ncells
-		p1 => cell_list(i1)
-		a1 = p1%a
-		b1 = p1%b
-		k1 = (i1-1)*np
-		centre1 = xx(k1+1:k1+3)
-		if (np == 6) then
-			orient1 = xx(k1+4:k1+6)
-		else
-			orient1 = p1%orient
-		endif
-		!if (np == 6) then
-		!	M(i1,1:ncells,:) = 0
-		!endif
-		do jn = 1,p1%nbrs
-			i2 = p1%nbrlist(jn)
-            if (i2 == i1) cycle
-			if (j > 0) then
-				if (.not.inlist(i2,connected(j,:),nconnected(j))) cycle
-			endif
-			p2 => cell_list(i2)
-			a2 = p2%a
-			b2 = p2%b
-			k2 = (i2-1)*np
-			centre2 = xx(k2+1:k2+3)
-            if (SameCentre(centre1,centre2)) stop
-			if (np == 6) then
-				orient2 = xx(k2+4:k2+6)
-			else
-				orient2 = p2%orient
-			endif
-			s1 = s1s2(i1,i2,1)
-			s2 = s1s2(i1,i2,2)
-			call CellInteraction(a1,b1,centre1,orient1,a2,b2,centre2,orient2,s1,s2,delta,FF,MM1,MM2,ok)
-            if (.not.ok) then
-                write(*,*) 'istep, i1, i2: ',istep,i1,i2
-                return
-            endif
-			s1s2(i1,i2,1) = s1
-			s1s2(i1,i2,2) = s2
-			s1s2(i2,i1,1) = s1
-			s1s2(i2,i1,2) = s2
-			nfeval = nfeval + 1
-			if (FF(1)==0 .and. FF(2)==0 .and. FF(3)==0) then
-				nzero = nzero + 1
-				ntzero = ntzero + 1
-				
-				if (clean_list) then
-					do k = 1,np
-						jj = k1 + k
-						call remove(i2,connected(jj,:),nconnected(jj))
-					enddo
-					do k = 1,np
-						jj = k2 + k
-						call remove(i1,connected(jj,:),nconnected(jj))
+nd = Ndim
+if (.not.may_collide) then
+	c0 = 0.5*(mcell(1,Nlong/2)%centre + mcell(Ncirc/2,Nlong/2)%centre)
+	c1 = 0.5*(mcell(1,1)%centre + mcell(Ncirc/2,1)%centre)
+	c2 = 0.5*(mcell(1,Nlong)%centre + mcell(Ncirc/2,Nlong)%centre)
+!	v1 = c1 - c0
+!	d = sqrt(dot_product(v1,v1))
+!	v1 = v1/d
+!	v2 = c2 - c0
+!	d = sqrt(dot_product(v2,v2))
+!	v2 = v2/d
+!	may_collide = (sqrt(dot_product(v1,v2)) > 0.9)	! a very crude test
+!	write(nflog,'(a,6f8.3)') 'v1,v2: ',v1,v2
+	v2 = c2 - c1
+	may_collide = (sqrt(dot_product(v2,v2)) < 5*Rinitial)
+	if (.not.may_collide) return
+	first_collide = .true.
+endif
+!write(nflog,*) 'getCollisionForces'	
+if (first_collide) then
+	jl1_lo = 1
+	jl1_hi = Nlong - Nthresh
+	jl2_lo = 2
+	jl2_hi = Nlong
+	ic1_lo = 1
+	ic1_hi = Ncirc
+	ic2_lo = 1
+	ic2_hi = Ncirc
+	first_collide = .false.
+else
+	jl1_lo = max(1,jl1_min-3)
+	jl1_hi = min(Nlong,jl1_min+3)
+	ic1_lo = ic1_min - 3
+	ic1_hi = ic1_min + 3
+	jl2_lo = max(1,jl2_min-3)
+	jl2_hi = min(Nlong,jl2_min+3)
+	ic2_lo = ic2_min - 3
+	ic2_hi = ic2_min + 3
+endif
+dmin = 1.0e10
+!do jlong1 = 1,Nlong - Nthresh
+!	do icirc1 = 1,Ncirc
+do jlong1 = jl1_lo,jl1_hi
+	do ic1 = ic1_lo,ic1_hi
+		icirc1 = ic1
+		if (icirc1 < 1) icirc1 = icirc1 + Ncirc
+		if (icirc1 > Ncirc) icirc1 = icirc1 - Ncirc
+!		c1 = mcell(icirc1,jlong1)%centre
+		kx = (jlong1-1)*nd*Ncirc + (icirc1-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c1 = [v(kx),v(ky),v(kz)]
+		w1 = mcell(icirc1,jlong1)%width(3)
+!		do jlong2 = jlong1 + Nthresh, Nlong
+!			do icirc2 = 1,Ncirc
+		do jlong2 = jl2_lo,jl2_hi
+			if (abs(jlong1-jlong2) < Nthresh) cycle
+			do ic2 = ic2_lo,ic2_hi
+				icirc2 = ic2
+				if (icirc2 < 1) icirc2 = icirc2 + Ncirc
+				if (icirc2 > Ncirc) icirc2 = icirc2 - Ncirc
+!				c2 = mcell(icirc2,jlong2)%centre
+				kx = (jlong2-1)*nd*Ncirc + (icirc2-1)*nd + 1 
+				ky = kx + 1 
+				kz = kx + 2
+				c2 = [v(kx),v(ky),v(kz)]
+				w2 = mcell(icirc2,jlong2)%width(3)
+				v2 = c2 - c1
+				d = sqrt(dot_product(v2,v2))
+				if (d < dmin) then
+					dmin = d
+					ic1_min = icirc1
+					jl1_min = jlong1
+					ic2_min = icirc2
+					jl2_min = jlong2
+!					write(nflog,*) 'dmin: ',ic1_min,jl1_min,ic2_min,jl2_min,dmin
+				endif
+				dthresh = 1*(w1 + w2)
+				dlimit = (w1 + w2)/2
+				if (d < dthresh) then
+					theta = (PI/2)*(dthresh - d)/(dthresh - dlimit)
+					if (theta >= PI/2) then
+						write(nflog,*) 'Bad theta: ',theta,d,dthresh,dlimit
+						stop
+					endif
+					fun = tan(theta)
+					f = alpha_collide*fun*v2/d
+!					write(nflog,'(4i3,6f8.4)') jlong1,icirc1,jlong2,icirc2,d,theta,fun,f
+					! f(:) is the force on c2, -f(:) is the force on c1
+					do kd = 1,Ndim
+						k = (jlong1-1)*nd*Ncirc + (icirc1-1)*nd + kd 
+						fc(k) = fc(k) - f(kd)
+						k = (jlong2-1)*nd*Ncirc + (icirc2-1)*nd + kd 
+						fc(k) = fc(k) + f(kd)
 					enddo
 				endif
-	
-			endif
-			if (.not.ok) then
-				write(*,*) 'istep, i1, i2: ',istep,i1,i2
-				return
-			endif
-			F(i1,i2,:) = FF
-			F(i2,i1,:) = -F(i1,i2,:)
-			if (np == 6) then
-		        M(i1,i2,:) = MM1
-		        M(i2,i1,:) = MM2
-		    endif
+			enddo
 		enddo
 	enddo
-	if (j == 0) then
-		Fbase = F
-		if (np == 6) Mbase = M
-	endif
-	
-	f1 = 0
-	do i1 = 1,ncells
-		Fsum = 0
-		Msum = 0
-		p1 => cell_list(i1)
-		do jn = 1,p1%nbrs
-			i2 = p1%nbrlist(jn)
-			Fsum = Fsum + F(i1,i2,:)
-			if (np == 6) then
-		        Msum = Msum + M(i1,i2,:)
-            endif
-		enddo
-		k1 = (i1-1)*np
-		f1(k1+1:k1+3) = Fsum/Fdrag
-		if (np == 6) then
-    		orient1 = xx(k1+4:k1+6)
-			call cross_product(Msum/Mdrag,orient1,f1(k1+4:k1+6))
-		endif
-	enddo
-	if (j == 0) then
-		f0 = f1
-	else
-		do i = 1,n
-			Jac(i,j) = (f1(i) - f0(i))/dx
-            if (abs(Jac(i,j)) < tol) then
-                Jac(i,j) = 0
-            endif
-		enddo
-		xx(j) = x(j)	
-	endif
 enddo
 
-deallocate(xx)
-!deallocate(f0)
-deallocate(f1)
-deallocate(connected)
-deallocate(nconnected)
-deallocate(Fbase)
-if (np == 6) deallocate(Mbase)
-ok = .true.
 end subroutine
 
-!------------------------------------------------------------------------------------------
-! Note: Jac is replaced by I - dt.Jac
-!------------------------------------------------------------------------------------------
-subroutine DoInversion(Jac,Ainv,n,dt,ok)
-real(REAL_KIND) :: Jac(n,n), Ainv(n,n), dt
-integer :: n
-logical :: ok
-integer :: i, res
+!-----------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------
+subroutine getBendForces(v,fb)
+real(REAL_KIND) :: v(*), fb(:)
+integer :: icirc, jlong, jl_D, jl_U, ic_L, ic_R, nd, kd, k, kx, ky, kz
+real(REAL_KIND) :: c(3), c_L(3), c_R(3), c_D(3), c_U(3)
+real(REAL_KIND) :: v_L(3), v_R(3), v_D(3), v_U(3), v_N(3), d, F_L(3), F_R(3), F_D(3), F_U(3)
+logical :: is_U, is_D
 
-Jac = -dt*Jac
-do i = 1,n
-    Jac(i,i) = 1 + Jac(i,i)
-enddo
-call invert(Jac,Ainv,n,res)
-ok = (res==0)
-end subroutine
-
-!------------------------------------------------------------------------------------------
-! x(:) holds the position (centre) and orientation (orient) of each cell.
-! The neighbour list nbrlist(:,:) holds each cell's neighbours, assumed not to change
-! over the duration of this solving step.
-! The force between two cells is stored in F(:,:,:), and the contact points on the two cells
-! is in cp(:,:,:).  If the force between cells i1 and i2 has already been computed: F(i1,i2,:),
-! then F(i2,i1,:) is set = -F(i1,i2,:) and is not recomputed later when cell i2 is treated.
-!
-!Note: could take account of growth of a, b with t!
-!------------------------------------------------------------------------------------------
-subroutine fderiv(t,x,xp)
-real(REAL_KIND) :: t, x(*), xp(*)
-integer :: i1, i2, j, k1, k2, kpar=0
-real(REAL_KIND) :: a1, b1, centre1(3), orient1(3), a2, b2, centre2(3), orient2(3), s1, s2, delta
-real(REAL_KIND) :: FF(3), MM1(3), MM2(3), Fsum(3), Msum(3), R, mamp, vm(3), dangle, bigsum1(3), bigsum2(3)
-type(cell_type), pointer :: p1, p2
-logical :: ok
-
-overlap_average = 0
-overlap_max = 0
-F = 0
-if (np == 6) then
-    M = 0
-endif
-do i1 = 1,ncells
-    p1 => cell_list(i1)
-    a1 = p1%a
-    b1 = p1%b
-    k1 = (i1-1)*np
-    centre1 = x(k1+1:k1+3)
-    if (np == 6) then
-		orient1 = x(k1+4:k1+6)
+nd = Ndim
+fb = 0
+do jlong = 1,Nlong
+	if (jlong == 1) then
+		jl_U = jlong + 1
+		is_D = .false.
+		is_U = .true.
+	elseif (jlong == Nlong) then
+		jl_D = jlong - 1
+		is_D = .true.
+		is_U = .false.
 	else
-		orient1 = p1%orient
+		jl_D = jlong - 1
+		jl_U = jlong + 1
+		is_D = .true.
+		is_U = .true.
 	endif
-    do j = 1,p1%nbrs
-        i2 = p1%nbrlist(j)
-        if (i2 == i1) cycle
-        if (F(i1,i2,1) /= 0) cycle		!??????????  !  try removing this, repeat computation with i2,i1
-        p2 => cell_list(i2)
-        a2 = p2%a
-        b2 = p2%b
-        k2 = (i2-1)*np
-        centre2 = x(k2+1:k2+3)
-        if (SameCentre(centre1,centre2)) stop
-	    if (np == 6) then
-			orient2 = x(k2+4:k2+6)
+	do icirc = 1,Ncirc
+		kx = (jlong-1)*nd*Ncirc + (icirc-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c = [v(kx),v(ky),v(kz)]
+		
+		ic_L = icirc - 1
+		if (icirc == 1) ic_L = Ncirc		
+		kx = (jlong-1)*nd*Ncirc + (ic_L-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_L = [v(kx),v(ky),v(kz)]
+		v_L = c_L - c
+		d = sqrt(dot_product(v_L,v_L))
+		v_L = v_L/d
+		
+		ic_R = icirc + 1
+		if (icirc == Ncirc) ic_R = 1
+		kx = (jlong-1)*nd*Ncirc + (ic_R-1)*nd + 1 
+		ky = kx + 1 
+		kz = kx + 2
+		c_R = [v(kx),v(ky),v(kz)]
+		v_R = c_R - c
+		d = sqrt(dot_product(v_R,v_R))
+		v_R = v_R/d
+		
+!		cosa = dot_product(v_L,v_R)
+!		theta = acos(cosa)
+!		call cross_product(v_R,v_L,v_N)	! v_N is normal to v_R and v_L, in the up (long) direction if theta > 0
+!		d_N = sqrt(dot_product(v_N,v_N))
+!		v_N = v_N/d_N	! unit vector
+!		! At the left point, L, the left force contribution F_L is ~ v_N x V_L, and this gives -F_L at C
+!		! At the right point, R, the right force contribution F_R is ~ V_R x v_N, and this gives -F_R at C
+!		! Force magnitude is proportional to theta
+!		call cross_product(v_L,v_N,F_L)
+!		dF = dF + alpha_bend*theta*F_L
+!		call cross_product(v_R,v_N,F_R)
+!		dF = dF - alpha_bend*theta*F_R
+		
+		call bending_force(v_L, v_R, F_L, F_R)
+		
+		if (is_D .and. is_U) then
+			kx = (jl_D-1)*nd*Ncirc + (icirc-1)*nd + 1 
+			ky = kx + 1 
+			kz = kx + 2
+			c_D = [v(kx),v(ky),v(kz)]
+			v_D = c_D - c
+			d = sqrt(dot_product(v_D,v_D))
+			v_D = v_D/d
+			
+			kx = (jl_U-1)*nd*Ncirc + (icirc-1)*nd + 1 
+			ky = kx + 1 
+			kz = kx + 2
+			c_U = [v(kx),v(ky),v(kz)]
+			v_U = c_U - c
+			d = sqrt(dot_product(v_U,v_U))
+			v_U = v_U/d
+			
+			call bending_force(v_D, v_U, F_D, F_U)
 		else
-			orient2 = p2%orient
-        endif
-!		s1 = 0.5	! initial guesses
-!		s2 = 0.5
-		s1 = s1s2(i1,i2,1)
-		s2 = s1s2(i1,i2,2)
-        call CellInteraction(a1,b1,centre1,orient1,a2,b2,centre2,orient2,s1,s2,delta,FF,MM1,MM2,ok)
-        if (.not.ok) then
-            write(*,*) 'istep, i1, i2: ',istep,i1,i2
-            fderiv_ok = .false.
-            return
-        endif
-		s1s2(i1,i2,1) = s1
-		s1s2(i1,i2,2) = s2
-		s1s2(i2,i1,1) = s1
-		s1s2(i2,i1,2) = s2
-        F(i1,i2,:) = FF
-        F(i2,i1,:) = -F(i1,i2,:) + (/1.0e-12,0.0,0.0/)      !  try removing this, repeat computation with i2,i1
-        if (np == 6) then
-			M(i1,i2,:) = MM1
-			M(i2,i1,:) = MM2
+			F_D = 0
+			F_U = 0
 		endif
-		if (delta < 0) then
-			overlap_average = overlap_average - delta
-			overlap_max = max(overlap_max,-delta)
-		endif
-    enddo
+			
+		
+		do kd = 1,Ndim
+			k = (jlong-1)*nd*Ncirc + (icirc-1)*nd + kd 
+			fb(k) = fb(k) + F_L(kd) + F_R(kd)
+			fb(k) = fb(k) + F_D(kd) + F_U(kd)
+			k = (jlong-1)*nd*Ncirc + (ic_L-1)*nd + kd 
+			fb(k) = fb(k) - F_L(kd)
+			k = (jlong-1)*nd*Ncirc + (ic_R-1)*nd + kd 
+			fb(k) = fb(k) - F_R(kd)
+			if (is_D .and. is_U) then
+				k = (jl_D-1)*nd*Ncirc + (icirc-1)*nd + kd 
+				fb(k) = fb(k) - F_D(kd)
+				k = (jl_U-1)*nd*Ncirc + (icirc-1)*nd + kd 
+				fb(k) = fb(k) - F_U(kd)
+			endif
+		enddo
+	enddo
 enddo
-overlap_average = overlap_average/ncells
-bigsum1 = 0
-bigsum2 = 0
-do i1 = 1,ncells
-    p1 => cell_list(i1)
-    Fsum = 0
-    Msum = 0
-    do j = 1,p1%nbrs
-        i2 = p1%nbrlist(j)
-        Fsum = Fsum + F(i1,i2,:)
-        if (np == 6) then
-	        Msum = Msum + M(i1,i2,:)
-        endif
-        bigsum1 = bigsum1 + F(i1,i2,:)
-        bigsum2 = bigsum2 + F(i2,i1,:)
-    enddo
-    k1 = (i1-1)*np
-    xp(k1+1:k1+3) = Fsum/Fdrag
-!!    mamp = sqrt(dot_product(Msum,Msum))
-!!    vm = Msum/mamp     ! unit vector of moment axis
-!!    dangle = mamp/Mdrag
-!!    orient1 = x(k1+4:k1+6)
-!!    call rotate(orient1,vm,dangle,xp(k1+4:k1+6))
-	if (np == 6) then
-		orient1 = x(k1+4:k1+6)
-		call cross_product(Msum/Mdrag,orient1,xp(k1+4:k1+6))
-    endif
-enddo
-!write(*,*) 'xp:'
-!write(*,'(3f7.3,4x,3f7.3)') xp(1:6*ncells)
-if (abs(bigsum1(1)) > 1.0) then
-    write(*,'(a,6f10.4)') 'bigsum1,bigsum2: ', bigsum1,bigsum2
-    stop
-endif
-fderiv_ok = .true.
-ok = .true.
+
 end subroutine
 
-!------------------------------------------------------------------------------------------
-!------------------------------------------------------------------------------------------
-subroutine solver(dt, nt,ok)
-real(REAL_KIND) :: dt
-integer :: nt
-logical :: ok
-integer :: kcell, k, i, j, kk, icell, jcell, nvars, flag, kmax, res
-type(cell_type), pointer :: p
-real(REAL_KIND), allocatable :: x(:)        ! the cell position and orientation variables
-real(REAL_KIND), allocatable :: xp(:)       ! derivs of cell position and orientation variables
-real(REAL_KIND) :: tstart, tend, relerr, abserr
-real(REAL_KIND) :: amp, sum, dmax
-real(REAL_KIND), allocatable :: Jac(:,:), Ainv(:,:), dx(:), JacF(:,:)
-real(REAL_KIND) :: dxlimit = 1
+!-----------------------------------------------------------------------------------------
+! v1 and v2 are unit vectors from centre point C to adjacent centre points (L R or D U)
+! The force F1 is applied at C, -F1 at point 1
+! The force F2 is applied at C, -F2 at point 2
+!-----------------------------------------------------------------------------------------
+subroutine bending_force(v1, v2, F1, F2)
+real(REAL_KIND) :: v1(3), v2(3), F1(3), F2(3)
+real(REAL_KIND) :: cosa, theta, v_N(3), d_N
 
-if (simulate_rotation) then
-	np = 6
+cosa = dot_product(v1,v2)
+theta = acos(abs(cosa))
+call cross_product(v2,v1,v_N)	! v_N is normal to v2 and v1
+d_N = sqrt(dot_product(v_N,v_N))
+if (d_N > 1.0d-6) then
+	v_N = v_N/d_N	! unit normal vector
 else
-	np = 3
+	F1 = 0
+	F2 = 0
+	return
 endif
-nvars = np*ncells
-allocate(x(nvars),stat=res)
-if (res /= 0) then
-	write(*,*) 'Allocate failed for: x'
-	stop
-endif
-allocate(xp(nvars),stat=res)
-if (res /= 0) then
-	write(*,*) 'Allocate failed for: xp'
-	stop
-endif
-allocate(F(ncells,ncells,3),stat=res)
-if (res /= 0) then
-	write(*,*) 'Allocate failed for: F'
-	stop
-endif
-allocate(M(ncells,ncells,3),stat=res)
-if (res /= 0) then
-	write(*,*) 'Allocate failed for: M'
-	stop
-endif
-!write(*,*) 'Memory required: ',8*(2*nvars + 2*3*ncells*ncells)
-!allocate(cp(ncells,ncells,3))
-!allocate(nbrs(ncells))
-!allocate(nbrlist(ncells,MAX_NBRS))
-
-do kcell = 1,ncells
-    p =>cell_list(kcell)
-    k = (kcell-1)*np
-    x(k+1:k+3) = p%centre
-    if (np == 6) then
-		x(k+4:k+6) = p%orient
-	endif
-enddo
-
-if (isolver == SLOW_EULER_SOLVER .or. isolver == FAST_EULER_SOLVER) then
-    allocate(Jac(nvars,nvars),stat=res)
-    if (res /= 0) then
-	    write(*,*) 'Allocate failed for: Jac'
-	    stop
-    endif
-    allocate(Ainv(nvars,nvars),stat=res)
-    if (res /= 0) then
-	    write(*,*) 'Allocate failed for: Ainv'
-	    stop
-    endif
-    allocate(dx(nvars),stat=res)
-    if (res /= 0) then
-	    write(*,*) 'Allocate failed for: dx'
-	    stop
-    endif
-    !allocate(JacF(nvars,nvars),stat=res)
-    !if (res /= 0) then
-	   ! write(*,*) 'Allocate failed for: JacF'
-	   ! stop
-    !endif
-    if (isolver == FAST_EULER_SOLVER) then
-	    call JacobianFast(Jac, xp, x, nvars, ok)    ! xp(:) = f(x)
-        if (.not.ok) return
-    !	write(*,*) 'got Jac fast:'
-    !   write(*,'(9f8.3)') Jac
-    else
-        call JacobianSlow(Jac, xp, x, nvars,ok)   ! xp(:) = f(x)
-        if (.not.ok) return
-    endif
-    !do i = 1,nvars
-    !    icell = (i-1)/np + 1
-    !    do j = 1,nvars
-    !        jcell = (j-1)/np + 1
-    !        if (abs(Jac(i,j) - JacF(i,j)) > 1.0e-6) then
-    !            write(*,'(4i6,3e12.3)') i,j,icell,jcell,Jac(i,j),JacF(i,j),Jac(i,j)-JacF(i,j)
-    !        endif
-    !    enddo
-    !enddo  
-    
-    call DoInversion(Jac,Ainv,nvars,dt,ok)
-    do i = 1,nvars
-        sum = 0
-        do j = 1,nvars
-            sum = sum + Ainv(i,j)*xp(j)
-        enddo
-        dx(i) = dt*sum
-        !if (istep == 450) then
-        !    write(*,'(a,i4,3f10.4)') 'sum: ',i,dt,sum,dx(i)
-        !endif
-    enddo
-    dmax = 0
-    do kcell = 1,ncells
-        k = (kcell-1)*np
-        sum = 0
-        do i = 1,3
-            sum = sum + dx(k+i)**2
-        enddo
-        sum = sqrt(sum)
-        if (sum > dmax) then
-            dmax = sum
-            kmax = kcell
-        endif
-    enddo
-    if (dmax > 1) then
-        k = (kmax-1)*np
-        do kk = 1,3
-            i = k + kk
-            write(*,*) 'dmax > 1: ',kmax,i,dmax
-            do j = 1,nvars
-                write(*,'(i6,3f10.3)') j,Ainv(i,j),xp(j),Ainv(i,j)*xp(j)
-            enddo
-        enddo
-    endif
-                  
-    do i = 1,nvars
-        x(i) = x(i) + dx(i)
-    enddo
-    if (allocated(JacF)) deallocate(JacF)
-    deallocate(Jac)
-    deallocate(Ainv)
-    deallocate(dx)
-    
-    if (dmax > run_dmax) then
-        run_dmax = dmax
-        run_kmax = kmax
-        run_maxstep = istep
-    endif
-    write(*,'(a,i4,f10.3,2x,2i6,f10.3)') 'max displacement: ',kmax,dmax,run_maxstep,run_kmax,run_dmax 
-    if (dmax > dxlimit) stop
-else
-	tstart = 0
-	xp = 0
-	F = 0
-	M = 0
-	call fderiv(tstart,x,xp)
-    ok = fderiv_ok
-    if (.not.ok) return
-	abserr = sqrt ( epsilon ( abserr ) )
-	relerr = sqrt ( epsilon ( relerr ) )
-	flag = 1
-	do j = 1,nt
-		tstart = (j-1)*dt
-		tend = tstart + dt
-		call r8_rkf45 ( fderiv, nvars, x, xp, tstart, tend, relerr, abserr, flag )
-		if (flag == 4) then
-            write(*,*) 'flag: ',flag
-			call r8_rkf45 ( fderiv, nvars, x, xp, tstart, tend, relerr, abserr, flag )
-		endif
-		if (flag /= 2) then
-			write(logmsg,*) 'Bad flag: ',flag
-			call logger(logmsg)
-			deallocate(x)
-			deallocate(xp)
-			deallocate(F)
-			deallocate(M)
-			ok = .false.
-			return
-        endif
-        write(*,'(10f7.3)') xp(1:10)
-		flag = 2
-	enddo
-endif
-do kcell = 1,ncells
-    p => cell_list(kcell)
-    k = (kcell-1)*np
-    p%centre = x(k+1:k+3)
-    if (np == 6) then
-		p%orient = x(k+4:k+6)
-		amp = sqrt(dot_product(p%orient,p%orient))
-		p%orient = p%orient/amp
-	endif
-enddo
-deallocate(x)
-deallocate(xp)
-deallocate(F)
-deallocate(M)
-ok = .true.
+!write(*,'(a,3f10.6)') 'v1: ',v1
+!write(*,'(a,3f10.6)') 'v2: ',v2
+!write(*,'(a,3f10.6)') 'vN: ',v_N
+call cross_product(v1,v_N,F1)
+!write(*,'(a,3f8.4)') 'F1: ',F1
+F1 = Falpha_bend*theta*F1
+call cross_product(v_N,v2,F2)
+!write(*,'(a,3f8.4)') 'F2: ',F2
+!write(*,'(a,2e12.3)') 'cosa, theta: ',cosa,theta
+F2 = Falpha_bend*theta*F2
+!stop
 end subroutine
 
 end module
-
