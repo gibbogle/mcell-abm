@@ -13,17 +13,21 @@ Params::Params()
 "Nlong",
 "Number of longitudinal cells"},
 
-{"NHOURS", 8.0, 0.0, 0.0,
+{"NHOURS", 24.0, 0.0, 0.0,
 "Number of hours",
 "Length of the simulation.(hours)"},
 
-{"DELTA_T", 3, 0, 0,
+{"DELTA_T", 5, 0, 0,
 "Time step",
 "Time step (mins)."},
 
 {"DELTA_X", 1, 0, 0,
 "Cell size",
 "Cell size."},
+
+{"RATE_FACTOR", 1.0, 0, 0,
+"Rate factor",
+"The rate factor enables scaling of all rates"},
 
 {"PRESSURE", 0.0, 0, 0,
 "Pressure",
@@ -41,7 +45,7 @@ Params::Params()
 "Shear force constant",
 "Shear force constant"},
 
-{"FALPHA_BEND", 0.001, 0, 0,
+{"FALPHA_BEND", 0.003, 0, 0,
 "Bending force constant",
 "Bening force constant"},
 
@@ -69,30 +73,49 @@ Params::Params()
 "",
 "CellML file for the cell growth model"},
 
-{"DORSAL_BOTTOM", 0, 0, 0,
- "Dorsal-bottom growth rate",
- "Growth rate at the bottom of the tube, dorsal side"},
+//{"DORSAL_BOTTOM", 0, 0, 0,
+// "Dorsal-bottom growth rate",
+// "Growth rate at the bottom of the tube, dorsal side"},
 
-{"DORSAL_MIDDLE", 0.00208, 0, 0,
- "Dorsal-middle growth rate",
- "Growth rate at the middle of the tube, dorsal side"},
+//{"DORSAL_MIDDLE", 0.00208, 0, 0,
+// "Dorsal-middle growth rate",
+// "Growth rate at the middle of the tube, dorsal side"},
 
-{"DORSAL_TOP", 0, 0, 0,
- "Dorsal-top growth rate",
- "Growth rate at the top of the tube, dorsal side"},
+//{"DORSAL_TOP", 0, 0, 0,
+// "Dorsal-top growth rate",
+// "Growth rate at the top of the tube, dorsal side"},
 
-{"VENTRAL_BOTTOM", 0, 0, 0,
- "Ventral-bottom growth rate",
- "Growth rate at the bottom of the tube, ventral side"},
+//{"VENTRAL_BOTTOM", 0, 0, 0,
+// "Ventral-bottom growth rate",
+// "Growth rate at the bottom of the tube, ventral side"},
 
-{"VENTRAL_MIDDLE", 0, 0, 0,
- "Ventral-middle growth rate",
- "Growth rate at the middle of the tube, ventral side"},
+//{"VENTRAL_MIDDLE", 0, 0, 0,
+// "Ventral-middle growth rate",
+// "Growth rate at the middle of the tube, ventral side"},
 
-{"VENTRAL_TOP", 0, 0, 0,
- "Ventral-top growth rate",
- "Growth rate at the top of the tube, ventral side"},
+//{"VENTRAL_TOP", 0, 0, 0,
+// "Ventral-top growth rate",
+// "Growth rate at the top of the tube, ventral side"},
 
+{"GROWTH_FILE_1", 0, 0, 0,
+"growthrates-8.00.dat",
+"Growth file for embryonic time point 1"},
+
+{"GROWTH_FILE_2", 0, 0, 0,
+"growthrates-8.25.dat",
+"Growth file for embryonic time point 2"},
+
+{"GROWTH_FILE_3", 0, 0, 0,
+"growthrates-8.50.dat",
+"Growth file for embryonic time point 3"},
+
+{"GROWTH_FILE_4", 0, 0, 0,
+"growthrates-8.75.dat",
+"Growth file for embryonic time point 4"},
+
+{"GROWTH_FILE_5", 0, 0, 0,
+"growthrates-9.00.dat",
+"Growth file for embryonic time point 5"},
 
 // Entries after this point are QMyLabel dummies, to enable display of explanatory info  - no input data is transmitted
 

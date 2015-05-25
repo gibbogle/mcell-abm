@@ -60,9 +60,10 @@ end type
 
 type mcell_type
 	real(REAL_KIND) :: centre(3)
+    real(REAL_KIND) :: theta
 	real(REAL_KIND) :: volume
 	real(REAL_KIND) :: area
-	real(REAL_KIND) :: width(3)
+	real(REAL_KIND) :: width(3)		! block dimensions in X (circ), Y (long), Z (radial) directions
 	real(REAL_KIND) :: vert(8,3)	! vertices
     real(REAL_KIND) :: vx(3)		! X, Y, Z axes of the block
     real(REAL_KIND) :: vy(3)
@@ -99,7 +100,7 @@ type, bind(C) :: hexahedron
     real(c_double) :: vz(3)
 end type
 
-integer, parameter :: nflog=10, nfin=11, nfout=12, nfres=13
+integer, parameter :: nflog=10, nfin=11, nfout=12, nfres=13, nfgrowth=14
 integer, parameter :: MAX_CELLS = 1000
 integer, parameter :: MAX_NBRS = 30
 real(REAL_KIND), parameter :: CYCLETIME0 = 12*60	! 12 hours -> minutes
@@ -132,7 +133,7 @@ logical :: simulation_start, par_zig_init, initialized
 !logical :: simulate_growth
 real(REAL_KIND) :: pressure, tension, Falpha_axial, Falpha_shear, Falpha_bend
 real(REAL_KIND) :: Rinitial
-real(REAL_KIND) :: growth_rate(2,3)
+!real(REAL_KIND) :: growth_rate(2,3)
 
 character*(128) :: logfile
 character*(2048) :: logmsg
@@ -155,6 +156,14 @@ integer :: run_kmax, run_maxstep
 integer :: j_deriv
 integer :: ic1_min, jl1_min, ic2_min, jl2_min
 logical :: may_collide, first_collide
+
+integer :: ngrowthtimes, NR, NL
+real(REAL_KIND) :: rate_factor
+character*(128), allocatable :: growth_file(:)
+real(REAL_KIND), allocatable  :: sector(:,:)
+real(REAL_KIND), allocatable  :: section(:,:)
+real(REAL_KIND), allocatable  :: growth_time(:)
+real(REAL_KIND), allocatable  :: growth_rate(:,:,:)
 
 logical :: dbug = .false.
 

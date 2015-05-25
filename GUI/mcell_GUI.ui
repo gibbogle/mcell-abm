@@ -42,7 +42,7 @@ padding: 8px
     <item row="0" column="0">
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>2</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="page_input">
        <layout class="QVBoxLayout" name="verticalLayout">
@@ -1635,6 +1635,42 @@ padding: 8px
                 </property>
                </widget>
               </item>
+              <item row="17" column="0">
+               <widget class="QMyLabel" name="label_RATE_FACTOR">
+                <property name="text">
+                 <string>label_RATE_FACTOR</string>
+                </property>
+               </widget>
+              </item>
+              <item row="17" column="1">
+               <spacer name="horizontalSpacer_33">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>40</width>
+                  <height>13</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item row="17" column="2">
+               <widget class="QLineEdit" name="line_RATE_FACTOR">
+                <property name="maximumSize">
+                 <size>
+                  <width>50</width>
+                  <height>16777215</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>0.5</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </widget>
@@ -1668,6 +1704,9 @@ padding: 8px
             </property>
            </widget>
            <widget class="QGroupBox" name="groupBox_growth">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
             <property name="geometry">
              <rect>
               <x>430</x>
@@ -1821,6 +1860,130 @@ padding: 8px
             <property name="text">
              <string>Growth Rates</string>
             </property>
+           </widget>
+           <widget class="QGroupBox" name="groupBox_growthfiles">
+            <property name="geometry">
+             <rect>
+              <x>430</x>
+              <y>180</y>
+              <width>311</width>
+              <height>181</height>
+             </rect>
+            </property>
+            <property name="title">
+             <string/>
+            </property>
+            <widget class="QWidget" name="gridLayoutWidget_3">
+             <property name="geometry">
+              <rect>
+               <x>10</x>
+               <y>10</y>
+               <width>291</width>
+               <height>161</height>
+              </rect>
+             </property>
+             <layout class="QGridLayout" name="gridLayout_2">
+              <item row="0" column="0">
+               <widget class="QLabel" name="alabel_head_day">
+                <property name="font">
+                 <font>
+                  <weight>75</weight>
+                  <bold>true</bold>
+                 </font>
+                </property>
+                <property name="text">
+                 <string>Day</string>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="1">
+               <widget class="QLabel" name="alabel_head_filename">
+                <property name="font">
+                 <font>
+                  <weight>75</weight>
+                  <bold>true</bold>
+                 </font>
+                </property>
+                <property name="text">
+                 <string>File name</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="0">
+               <widget class="QLabel" name="alabel_day1">
+                <property name="text">
+                 <string>8.00</string>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="1">
+               <widget class="QLineEdit" name="text_GROWTH_FILE_1">
+                <property name="text">
+                 <string>growthrate-8.00.dat</string>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="0">
+               <widget class="QLabel" name="alabel_day2">
+                <property name="text">
+                 <string>8.25</string>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="1">
+               <widget class="QLineEdit" name="text_GROWTH_FILE_2">
+                <property name="text">
+                 <string>growthrate-8.25.dat</string>
+                </property>
+               </widget>
+              </item>
+              <item row="3" column="0">
+               <widget class="QLabel" name="alabel_day3">
+                <property name="text">
+                 <string>8.50</string>
+                </property>
+               </widget>
+              </item>
+              <item row="3" column="1">
+               <widget class="QLineEdit" name="text_GROWTH_FILE_3">
+                <property name="text">
+                 <string>growthrate-8.50.dat</string>
+                </property>
+               </widget>
+              </item>
+              <item row="4" column="0">
+               <widget class="QLabel" name="alabel_day4">
+                <property name="text">
+                 <string>8.75</string>
+                </property>
+               </widget>
+              </item>
+              <item row="4" column="1">
+               <widget class="QLineEdit" name="text_GROWTH_FILE_4">
+                <property name="text">
+                 <string>growthrate-8.75.dat</string>
+                </property>
+               </widget>
+              </item>
+              <item row="5" column="0">
+               <widget class="QLabel" name="alabel_day5">
+                <property name="text">
+                 <string>9.00</string>
+                </property>
+               </widget>
+              </item>
+              <item row="5" column="1">
+               <widget class="QLineEdit" name="text_GROWTH_FILE_5">
+                <property name="text">
+                 <string>growthrate-9.00.dat</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
            </widget>
           </widget>
          </widget>

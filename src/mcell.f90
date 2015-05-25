@@ -16,6 +16,18 @@ real(REAL_KIND) :: hours
 integer :: nb0, nt_anim
 character*(256) :: cellmlfile
 
+! Set up growth data arrays
+if (allocated(growth_file)) then
+	deallocate(growth_file)
+	deallocate(growth_time)
+	deallocate(sector)
+	deallocate(section)
+	deallocate(growth_rate)
+endif
+ngrowthtimes = 5
+allocate(growth_file(ngrowthtimes))
+allocate(growth_time(ngrowthtimes))
+
 open(nfin,file=inputfile)
 !read(nfin,*) nb0
 !read(nfin,*) igrow
@@ -24,8 +36,9 @@ open(nfin,file=inputfile)
 read(nfin,*) Ncirc
 read(nfin,*) Nlong
 read(nfin,*) hours
-read(nfin,*) DELTA_T
+read(nfin,*) DELTA_T		! mins
 read(nfin,*) dx_init
+read(nfin,*) rate_factor
 read(nfin,*) pressure
 read(nfin,*) tension
 read(nfin,*) Falpha_axial
@@ -42,13 +55,20 @@ read(nfin,*) nt_anim
 !read(nfin,*) Fjigglefactor
 !read(nfin,*) Mjigglefactor
 read(nfin,*) cellmlfile
-read(nfin,*) growth_rate(1,1)	! dorsal-bottom
-read(nfin,*) growth_rate(1,2)	! dorsal-middle
-read(nfin,*) growth_rate(1,3)	! dorsal-top
-read(nfin,*) growth_rate(2,1)	! ventral-bottom
-read(nfin,*) growth_rate(2,2)	! ventral-middle
-read(nfin,*) growth_rate(2,3)	! ventral-top
+!read(nfin,*) growth_rate(1,1,1)	! dorsal-bottom
+!read(nfin,*) growth_rate(1,2,1)	! dorsal-middle
+!read(nfin,*) growth_rate(1,3,1)	! dorsal-top
+!read(nfin,*) growth_rate(2,1,1)	! ventral-bottom
+!read(nfin,*) growth_rate(2,2,1)	! ventral-middle
+!read(nfin,*) growth_rate(2,3,1)	! ventral-top
+read(nfin,*) growth_file(1)
+read(nfin,*) growth_file(2)
+read(nfin,*) growth_file(3)
+read(nfin,*) growth_file(4)
+read(nfin,*) growth_file(5)
 close(nfin)
+
+!write(*,'(a)') growth_file(:)
 
 !NX = nb0
 !NY = nb0
@@ -64,6 +84,46 @@ write(logmsg,*) 'hours,nsteps: ',hours,nsteps
 call logger(logmsg)
 ok = .true.
 end subroutine 
+
+!-----------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------
+subroutine SetupGrowthData
+integer :: itime, i, isection
+real(REAL_KIND) :: t0
+
+do itime = 1,ngrowthtimes
+	open(nfgrowth,file=growth_file(itime),status='old')
+	read(nfgrowth,*) growth_time(itime)
+!	write(*,*) 'growth_time: ',itime,growth_time(itime)
+	if (itime == 1) then
+		t0 = growth_time(1)
+		read(nfgrowth,*) NR
+		allocate(sector(NR,2))
+		do i = 1,NR
+			read(nfgrowth,*) sector(i,:)
+		enddo
+		read(nfgrowth,*) NL
+		allocate(section(NL,2))
+		do i = 1,NL
+			read(nfgrowth,*) section(i,:)
+		enddo
+		allocate(growth_rate(NR,NL,ngrowthtimes))
+	else
+		do i = 1,NR+NL+2
+			read(nfgrowth,*)
+		enddo
+	endif
+	do isection = 1,NL
+		read(nfgrowth,*) growth_rate(:,isection,itime)
+!		write(*,'(i3,8f8.4)') isection,growth_rate(:,isection,itime)
+	enddo
+	close(nfgrowth)
+	! Convert growth_time to time from start of simulation (mins)
+	growth_time(itime) = (growth_time(itime) - t0)*24*60	! days --> mins
+!	write(*,*) 'itime: ',itime,growth_time(itime)
+enddo
+
+end subroutine
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
@@ -85,6 +145,9 @@ call logger("ReadCellParams")
 call ReadCellParams(ok)
 if (.not.ok) return
 call logger("did ReadCellParams")
+
+call SetupGrowthData
+call logger('did SetupGrowthData')
 
 if (ncpu == 0) then
 	ncpu = ncpu_input
@@ -210,6 +273,7 @@ else
 			mcell(icirc,ilong)%centre = [x,y,z]
 			mcell(icirc,ilong)%width = [w, w, w]
 			mcell(icirc,ilong)%area = area
+			mcell(icirc,ilong)%theta = theta*180/PI
 		enddo
 	enddo
 endif
@@ -223,6 +287,7 @@ do icirc = 1,Ncirc
 		mcell0(icirc,ilong)%centre = mcell(icirc,ilong)%centre
 		mcell0(icirc,ilong)%volume = mcell(icirc,ilong)%volume
 		mcell0(icirc,ilong)%width = mcell(icirc,ilong)%width
+		mcell0(icirc,ilong)%theta = mcell(icirc,ilong)%theta
 	enddo
 enddo
 end subroutine
@@ -275,49 +340,184 @@ end subroutine
 !--------------------------------------------------------------------------------
 subroutine updateWidths6
 integer :: ilong, icirc, ivar
-real(REAL_KIND) :: x, fx, fy, ymid, tfactor, cyz
+real(REAL_KIND) :: rate, cyz
 real(REAL_KIND) :: t_start = 10		! time until bending start (min)
-!real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
 integer :: nstep_start
-!integer :: nstep_var
-integer :: isection	! 1 = bottom half, 2 = top half
 
 nstep_start = t_start/DELTA_T
 if (istep <= nstep_start) return
-!nstep_var = t_var/DELTA_T
-!write(nflog,*) 'nstep_var: ',nstep_var
-!nstep_var = (deltay_max/0.1)*40.		! sets a valid rate
-!ivar = istep - nstep_start
-!if (ivar <= nstep_var) then
-!	tfactor = (ivar-1.0)/(nstep_var - 1.0)
-!else
-!	tfactor = 1.0
-!endif
-ymid = (1 + Nlong)/2.
 do ilong = 1,Nlong
-	if (ilong <= ymid) then
-		isection = 1
-		fy = (ilong-1)/(ymid-1)
-	else
-		isection = 2
-		fy = (ilong-ymid)/(Nlong - ymid)
-	endif
-	
 	do icirc = 1,Ncirc
-		x = mcell0(icirc,ilong)%centre(1)
-		fx = (x + Rinitial)/(2*Rinitial)
-		cyz = (1-fx)*(1-fy)*growth_rate(2,isection) + fx*(1-fy)*growth_rate(1,isection)  &
-		    + (1-fx)*fy*growth_rate(2,isection+1) + fx*fy*growth_rate(1,isection+1)
-		cyz = (1 + DELTA_T*cyz)
+		rate = get_growthrate(ilong,icirc)
+		cyz = (1 + DELTA_T*rate)
 !		if (ilong == int(ymid)) write(nflog,*) 'cyz: ',cyz
 		mcell(icirc,ilong)%width(2) = cyz*mcell(icirc,ilong)%width(2)
-		if (cyz < 1) then		! adjust width(1) and width(3) to preserve volume
+		if (cyz < 1) then		! adjust width(1) and width(3) to preserve volume (do not allow block shrinkage)
 			mcell(icirc,ilong)%width(1) = mcell(icirc,ilong)%width(1)/sqrt(cyz)
 			mcell(icirc,ilong)%width(3) = mcell(icirc,ilong)%width(3)/sqrt(cyz)
 		endif
 	enddo
 enddo
 end subroutine
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+real(REAL_KIND) function get_growthrate(ilong,icirc) result(rate)
+integer :: ilong, icirc
+real(REAL_KIND) :: tnow, lo, hi, theta, yfraction, tfraction1, tfraction2
+integer :: i, isector, isection, itime1, itime2
+real(REAL_KIND) :: theta0, theta1, theta2, alfa
+real(REAL_KIND) :: yfraction0, yfraction1, yfraction2, beta
+integer ::  isector1, isector2, isection1, isection2
+
+tnow = istep*DELTA_T
+itime1 = 0
+do i = 2,ngrowthtimes
+	if (tnow < growth_time(i)) then
+		itime1 = i-1
+		itime2 = i
+		tfraction1 = (tnow - growth_time(itime1))/(growth_time(itime2) - growth_time(itime1))
+		tfraction2 = 1 - tfraction1
+		exit
+	endif
+enddo
+if (itime1 == 0) then
+	itime1 = ngrowthtimes
+	itime2 = ngrowthtimes
+	tfraction1 = 1
+	tfraction2 = 0
+endif
+
+! Given theta = mcell0(icirc,ilong)%theta, how to determine isector = 1,..,NR?
+! The sector boundaries are sector(isector,2)
+theta = mcell0(icirc,ilong)%theta
+yfraction = real(ilong)/nlong
+do isector = 1,NR
+	lo = sector(isector,1)
+	hi = sector(isector,2)
+	if (lo > hi) then
+		if (theta < 180) then
+			lo = lo - 360
+		else
+			hi = hi + 360
+		endif
+	endif
+	if (lo <= theta .and. theta <= hi) then
+		theta0 = (lo + hi)/2
+		exit
+	endif
+enddo
+do isection = 1,NL
+	lo = section(isection,1)
+	hi = section(isection,2)
+	if (lo <= yfraction .and. yfraction <= hi) exit
+enddo
+
+! Need to interpolate in space as well
+!!!!!!!!!!!!!!!!!!!!!!!!  THIS IS ALL SCREWED UP !!!!!!!!!!!!!!!!!!!!
+!theta0 = (sector(isector,1) + sector(isector,2))/2
+if (theta > theta0) then
+	isector1 = isector
+	theta1 = theta0
+	isector2 = isector1 + 1
+	if (isector2 > NR) isector2 = 1
+	lo = sector(isector2,1)
+	hi = sector(isector2,2)
+	if (lo > hi) then
+		if (theta < 180) then
+			lo = lo - 360
+		else
+			hi = hi + 360
+		endif
+	endif
+	theta2 = (lo + hi)/2
+else
+	isector2 = isector
+	theta2 = theta0
+	isector1 = isector - 1
+	if (isector1 < 1) isector1 = NR
+	lo = sector(isector1,1)
+	hi = sector(isector1,2)
+	if (lo > hi) then
+		if (theta < 180) then
+			lo = lo - 360
+		else
+			hi = hi + 360
+		endif
+	endif	
+	theta1 = (lo + hi)/2
+endif
+alfa = (theta - theta1)/(theta2 - theta1)
+
+!if (ilong == nlong/4) then
+!!	write(*,'(3i6,f8.4)') istep,icirc,isector,rate
+!	write(*,'(4i4,4f8.1,f8.4)') icirc,isector,isector1,isector2,theta0,theta1,theta,theta2,alfa
+!	if (icirc == ncirc) stop
+!endif    
+
+yfraction0 = (section(isection,1) + section(isection,2))/2
+if (yfraction > yfraction0) then
+	isection1 = isection
+	yfraction1 = yfraction0
+	isection2 = min(isection1 + 1, NL)
+	yfraction2 = (section(isection2,1) + section(isection2,2))/2
+else
+	isection2 = isection
+	yfraction2 = yfraction0
+	isection1 = max(isection2-1,1)
+	yfraction1 = (section(isection1,1) + section(isection1,2))/2
+endif
+if (isection1 /= isection2) then
+	beta = (yfraction - yfraction1)/(yfraction2 - yfraction1)
+else
+	beta = 1
+endif
+
+rate = tfraction1*((1-alfa)*(1-beta)*growth_rate(isector1,isection1,itime1) &
+                 + (1-alfa)*beta*growth_rate(isector1,isection2,itime1) &
+                 + alfa*(1-beta)*growth_rate(isector2,isection1,itime1) &
+                 + alfa*beta*growth_rate(isector2,isection2,itime1)) &
+     + tfraction2*((1-alfa)*(1-beta)*growth_rate(isector1,isection1,itime2) &
+                 + (1-alfa)*beta*growth_rate(isector1,isection2,itime2) &
+                 + alfa*(1-beta)*growth_rate(isector2,isection1,itime2) &
+                 + alfa*beta*growth_rate(isector2,isection2,itime2))
+rate = rate_factor*rate	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+!write(*,'(a,2e12.3)') 'rates: ',growth_rate(isector,isection,itime1),growth_rate(isector,isection,itime2)
+!write(*,'(5i4,f8.4)') istep,ilong,icirc,isector,isection,rate
+if (abs(rate) > 0.1) then
+	write(*,'(a,i3,f8.1)') 'istep,tnow: ',istep, tnow
+	write(*,'(a,2i4,2f8.4)') 'itime1, itime2: ',itime1,itime2,tfraction1,tfraction2
+	write(*,'(a,5f8.1)') 'growth_time: ',growth_time(:)
+	write(*,'(a,f8.4,i3)') 'theta,isector: ',theta,isector
+	write(*,'(a,f8.4,i3)') 'yfraction,isection: ',yfraction,isection
+	write(*,'(a,2i3,2e12.3)') 'rates: ',isector,isection,growth_rate(isector,isection,itime1),growth_rate(isector,isection,itime2)
+	write(*,'(3f8.4)') growth_rate(:,:,itime2)
+	stop
+endif
+end function
+
+!--------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
+real(REAL_KIND) function get_growthrate1(ilong,icirc) result(rate)
+integer :: ilong, icirc
+integer :: isection	! 1 = bottom half, 2 = top half
+real(REAL_KIND) :: x, fx, fy, ymid
+
+ymid = (1 + Nlong)/2.
+if (ilong <= ymid) then
+	isection = 1
+	fy = (ilong-1)/(ymid-1)
+else
+	isection = 2
+	fy = (ilong-ymid)/(Nlong - ymid)
+endif
+x = mcell0(icirc,ilong)%centre(1)
+fx = (x + Rinitial)/(2*Rinitial)
+rate = (1-fx)*(1-fy)*growth_rate(2,isection,1) + fx*(1-fy)*growth_rate(1,isection,1)  &
+    + (1-fx)*fy*growth_rate(2,isection+1,1) + fx*fy*growth_rate(1,isection+1,1)
+end function
+
 !--------------------------------------------------------------------------------
 !--------------------------------------------------------------------------------
 subroutine get_summary(summaryData) BIND(C)

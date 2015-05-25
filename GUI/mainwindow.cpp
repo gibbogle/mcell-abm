@@ -1286,6 +1286,8 @@ void MainWindow::writeout()
 		double val = p.value;
         if (p.tag.compare("CELLML_FILE") == 0)
 			line = p.label;
+        else if (p.tag.contains("GROWTH_FILE"))
+            line = p.label;
 //        else if (p.tag.compare("DRUG_A_NAME") == 0)
 //            line = p.label;
 //        else if (p.tag.compare("DRUG_B_NAME") == 0)
