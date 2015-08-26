@@ -1,0 +1,7 @@
+Build/
+Docs/
+Execution/
+mcell_GUI-build/
+/GUI/mcell_GUI.pro
+/GUI/mcell_GUI.pro.user
+/GUI/*.$$$

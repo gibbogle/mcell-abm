@@ -298,8 +298,8 @@ end subroutine
 subroutine updateWidths
 integer :: ilong, icirc, ivar
 real(REAL_KIND) :: x, y, z, ymid, tfactor, xfactor, yfactorx, yfactorz, zfactor, deltay, deltaz, cyz
-real(REAL_KIND) :: deltay_max = 0.0	!0.6
-real(REAL_KIND) :: deltaz_max = 0.0	!0.35
+real(REAL_KIND) :: deltay_max = 0.6	!0.6
+real(REAL_KIND) :: deltaz_max = 0.35	!0.35
 real(REAL_KIND) :: t_start = 60		! time until bending start (min)
 real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
 integer :: nstep_start
@@ -327,6 +327,8 @@ do ilong = 1,Nlong
 		yfactorz = (ilong - ymid)/Nlong
 		deltaz = tfactor*zfactor*yfactorz*deltaz_max
 		cyz = (1 + deltay)*(1 + deltaz)
+!		write(*,'(a,4f8.4)') 'tfactor,xfactor,yfactorx,deltay_max: ',tfactor,xfactor,yfactorx,deltay_max
+!		write(*,'(a,3f8.4)') 'deltay,deltaz,cyz: ',deltay,deltaz,cyz
 		mcell(icirc,ilong)%width(2) = cyz*mcell0(icirc,ilong)%width(2)
 		if (cyz < 1) then		! adjust width(1) and width(3) to preserve volume
 			mcell(icirc,ilong)%width(1) = mcell0(icirc,ilong)%width(1)/sqrt(cyz)
@@ -608,7 +610,7 @@ if (mod(istep,10) == 0) then
 endif
 ok = .true.
 
-call updateWidths6
+call updateWidths
 if (Ndim == 2) then
 	pv => v2D
 else
