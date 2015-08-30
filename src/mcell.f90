@@ -301,7 +301,7 @@ real(REAL_KIND) :: x, y, z, ymid, tfactor, xfactor, yfactorx, yfactorz, zfactor,
 real(REAL_KIND) :: deltay_max = 0.6	!0.6
 real(REAL_KIND) :: deltaz_max = 0.35	!0.35
 real(REAL_KIND) :: t_start = 60		! time until bending start (min)
-real(REAL_KIND) :: t_var = 20*60	! duration of bending (min)
+real(REAL_KIND) :: t_var = 30*60	! duration of bending (min)
 integer :: nstep_start
 integer :: nstep_var
 
