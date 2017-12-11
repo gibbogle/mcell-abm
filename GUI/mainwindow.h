@@ -136,6 +136,7 @@ private slots:
     void on_pushButtonGetCellMLFile_clicked();
     void on_pushButtonLoadCellMLFile_clicked();
     void cellmlParameterChanged();
+    void on_cbox_USE_CELLML_toggled(bool checked);
 
 public slots:
 	void preConnection();

@@ -1271,6 +1271,7 @@ void MainWindow::showMore(QString moreText)
 void MainWindow::writeout()
 {
 	QString line;
+    bool isText;
     QFile file(inputFile);
     if (!file.open(QFile::WriteOnly | QFile::Text)) {
         QMessageBox::warning(this, tr("Application"),
@@ -1284,25 +1285,31 @@ void MainWindow::writeout()
 	for (int k=0; k<parm->nParams; k++) {
 		PARAM_SET p = parm->get_param(k);
 		double val = p.value;
-        if (p.tag.compare("CELLML_FILE") == 0)
-			line = p.label;
-        else if (p.tag.contains("GROWTH_FILE"))
-            line = p.label;
+        isText = false;
+        if (p.tag.compare("CELLML_FILE") == 0 || p.tag.contains("GROWTH_FILE")) {
+            isText = true;
+            line = "";
+            if (p.label == "") p.label = "MISSING";
+//        } else if (p.tag.contains("GROWTH_FILE"))
+//            line = p.label;
 //        else if (p.tag.compare("DRUG_A_NAME") == 0)
 //            line = p.label;
 //        else if (p.tag.compare("DRUG_B_NAME") == 0)
 //            line = p.label;
-        else if (val == int(val)) 	// whole number, write as integer
+        } else if (val == int(val)) 	// whole number, write as integer
 			line = QString::number(int(val));
 		else
 			line = QString::number(val);
-		int nch = line.length();
-		for (int i=0; i<max(12-nch,1); i++)
-			line += " ";
-		line += p.tag;
-        nch = line.length();
-        for (int i=0; i<max(50-nch,1); i++)
-            line += " ";
+
+        if (!isText) {
+            int nch = line.length();
+            for (int i=0; i<max(12-nch,1); i++)
+                line += " ";
+            line += p.tag;
+            nch = line.length();
+            for (int i=0; i<max(50-nch,1); i++)
+                line += " ";
+        }
         line += p.label;
         line += "\n";
 		out << line;
@@ -3512,6 +3519,13 @@ void MainWindow::setGraphsActive()
     for (int i=0; i<grph->n_tsGraphs; i++) {
         grph->tsGraphs[i].active = cbox_ts[i]->isChecked();
     }
+}
+
+//--------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------
+void MainWindow::on_cbox_USE_CELLML_toggled(bool checked)
+{
+    pushButtonGetCellMLFile->setEnabled(checked);
 }
 
 /*

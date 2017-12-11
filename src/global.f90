@@ -138,6 +138,7 @@ real(REAL_KIND) :: Rinitial
 character*(128) :: logfile
 character*(2048) :: logmsg
 character*(128) :: cellmlfile
+logical :: use_cellml
 
 type(mcell_type), allocatable, target :: mcell(:,:)
 type(mcell_type), allocatable, target :: mcell0(:,:)

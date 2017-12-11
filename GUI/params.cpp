@@ -69,6 +69,10 @@ Params::Params()
 "NT_VTK",
 "Animation interval."},
 
+{"USE_CELLML", 0, 0, 1,
+"Use CellML?",
+"Growth controlled by signal and pathway dynamics described by CellML model (NOT IMPLEMENTED YET)"},
+
 {"CELLML_FILE", 0, 0, 0,
 "",
 "CellML file for the cell growth model"},

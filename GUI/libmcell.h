@@ -9,7 +9,7 @@ extern "C" {
 
 #include "hex.h"
 
-void execute(int *, char *, int *,char *, int *);
+void execute(int *, char *, int *,char *, int *, int *);
 void simulate_step(int *);
 void terminate_run(int *);
 void get_dimensions(int *, int *, int *, double *);

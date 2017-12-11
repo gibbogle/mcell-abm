@@ -153,7 +153,11 @@ void ExecThread::run()
     outfile = std_outfile.c_str();
 
 	paused = false;
-	execute(&ncpu,const_cast<char *>(infile),&len_infile,const_cast<char *>(outfile),&len_outfile);
+    execute(&ncpu,const_cast<char *>(infile),&len_infile,const_cast<char *>(outfile),&len_outfile,&res);
+    if (res != 0) {
+        terminate_run(&res);
+        return;
+    }
     get_dimensions(&nsteps, &Global::Ncirc, &Global::Nlong, &Global::DELTA_T);
     if (Global::hex_list) free(Global::hex_list);
     Global::hex_list = (HEXAHEDRON *)malloc(Global::Ncirc*Global::Nlong*sizeof(HEXAHEDRON));

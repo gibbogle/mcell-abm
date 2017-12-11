@@ -13,17 +13,15 @@ contains
 subroutine ReadCellParams(ok)
 logical :: ok
 real(REAL_KIND) :: hours
-integer :: nb0, nt_anim
+integer :: nb0, nt_anim, iuse_cellml
 character*(256) :: cellmlfile
 
 ! Set up growth data arrays
-if (allocated(growth_file)) then
-	deallocate(growth_file)
-	deallocate(growth_time)
-	deallocate(sector)
-	deallocate(section)
-	deallocate(growth_rate)
-endif
+if (allocated(growth_file)) deallocate(growth_file)
+if (allocated(growth_time)) deallocate(growth_time)
+if (allocated(sector)) deallocate(sector)
+if (allocated(section)) deallocate(section)
+if (allocated(growth_rate)) deallocate(growth_rate)
 ngrowthtimes = 5
 allocate(growth_file(ngrowthtimes))
 allocate(growth_time(ngrowthtimes))
@@ -54,6 +52,7 @@ read(nfin,*) nt_anim
 !read(nfin,*) Malpha
 !read(nfin,*) Fjigglefactor
 !read(nfin,*) Mjigglefactor
+read(nfin,*) iuse_cellml
 read(nfin,*) cellmlfile
 !read(nfin,*) growth_rate(1,1,1)	! dorsal-bottom
 !read(nfin,*) growth_rate(1,2,1)	! dorsal-middle
@@ -68,6 +67,13 @@ read(nfin,*) growth_file(4)
 read(nfin,*) growth_file(5)
 close(nfin)
 
+use_cellml = (iuse_cellml == 1)
+if (use_cellml) then
+	write(logmsg,'(a)') 'CellML model for growth is not yet implemented'
+	call logger(logmsg)
+	ok = .false.
+	return
+endif
 !write(*,'(a)') growth_file(:)
 
 !NX = nb0
@@ -690,14 +696,14 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 !-----------------------------------------------------------------------------------------
-subroutine Execute(ncpu,infile_array,inbuflen,outfile_array,outbuflen) BIND(C)
+subroutine Execute(ncpu,infile_array,inbuflen,outfile_array,outbuflen,res) BIND(C)
 !subroutine Execute() BIND(C)
 !DEC$ ATTRIBUTES DLLEXPORT :: execute
 use, intrinsic :: iso_c_binding
 character(c_char) :: infile_array(128), outfile_array(128)
-integer(c_int) :: ncpu, inbuflen, outbuflen
+integer(c_int) :: ncpu, inbuflen, outbuflen, res
 character*(128) :: infile, outfile
-integer :: i, res
+integer :: i
 logical :: ok, isopen
 
 infile = ''
@@ -743,7 +749,6 @@ if (ok) then
 else
 	call logger('=== Setup failed ===')
 	res = 1
-	stop
 endif
 end subroutine
 

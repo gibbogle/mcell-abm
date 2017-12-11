@@ -962,7 +962,7 @@ padding: 8px
             <property name="geometry">
              <rect>
               <x>10</x>
-              <y>460</y>
+              <y>490</y>
               <width>400</width>
               <height>20</height>
              </rect>
@@ -1675,10 +1675,13 @@ padding: 8px
             </widget>
            </widget>
            <widget class="QPushButton" name="pushButtonGetCellMLFile">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
             <property name="geometry">
              <rect>
               <x>11</x>
-              <y>430</y>
+              <y>460</y>
               <width>121</width>
               <height>23</height>
              </rect>
@@ -1694,7 +1697,7 @@ padding: 8px
             <property name="geometry">
              <rect>
               <x>290</x>
-              <y>430</y>
+              <y>460</y>
               <width>121</width>
               <height>23</height>
              </rect>
@@ -1984,6 +1987,19 @@ padding: 8px
               </item>
              </layout>
             </widget>
+           </widget>
+           <widget class="QCheckBox" name="cbox_USE_CELLML">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>430</y>
+              <width>91</width>
+              <height>18</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>Use CellML?</string>
+            </property>
            </widget>
           </widget>
          </widget>
