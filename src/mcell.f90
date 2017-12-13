@@ -3,6 +3,8 @@ module mcell_mod
 use global
 use geometry
 use solve
+use csim_abm_mp
+use cellml
 
 implicit none
 
@@ -13,7 +15,7 @@ contains
 subroutine ReadCellParams(ok)
 logical :: ok
 real(REAL_KIND) :: hours
-integer :: nb0, nt_anim, iuse_cellml
+integer :: nb0, nt_anim, iuse_cellml, i
 character*(256) :: cellmlfile
 
 ! Set up growth data arrays
@@ -53,7 +55,9 @@ read(nfin,*) nt_anim
 !read(nfin,*) Fjigglefactor
 !read(nfin,*) Mjigglefactor
 read(nfin,*) iuse_cellml
-read(nfin,*) cellmlfile
+read(nfin,*) signal_max
+read(nfin,*) cyclin_threshold
+read(nfin,'(a)') cellmlfile
 !read(nfin,*) growth_rate(1,1,1)	! dorsal-bottom
 !read(nfin,*) growth_rate(1,2,1)	! dorsal-middle
 !read(nfin,*) growth_rate(1,3,1)	! dorsal-top
@@ -67,12 +71,24 @@ read(nfin,*) growth_file(4)
 read(nfin,*) growth_file(5)
 close(nfin)
 
+! Put string-terminating NULL at first " "
+!cellmlfile = adjustl(cellmlfile)
+!i = index(cellmlfile,' ')
+!cellmlfile(i:128) = char(0)
+!cellmlfile=TRIM(ADJUSTL(cellmlfile))//char(0)
+
+!write(nflog,*) 'cellmlfile: ',cellmlfile
+!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
+!do i = 1,128
+!	write(nflog,'(i4,2x,a,2x,i4)') i,cellmlfile(i:i),ichar(cellmlfile(i:i))
+!enddo
+
 use_cellml = (iuse_cellml == 1)
 if (use_cellml) then
-	write(logmsg,'(a)') 'CellML model for growth is not yet implemented'
+	write(logmsg,'(a)') 'CellML model for growth is not yet implemented to control tube growth'
 	call logger(logmsg)
-	ok = .false.
-	return
+!	ok = .false.
+!	return
 endif
 !write(*,'(a)') growth_file(:)
 
@@ -88,6 +104,7 @@ write(logmsg,*) 'nitsolver: ',nitsolver
 call logger(logmsg)
 write(logmsg,*) 'hours,nsteps: ',hours,nsteps 
 call logger(logmsg)
+!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
 ok = .true.
 end subroutine 
 
@@ -138,7 +155,7 @@ integer :: ncpu
 character*(*) :: infile, outfile
 logical :: ok
 character*(64) :: msg
-integer :: kcell, i, j, error
+integer :: kcell, k, i, j, error
 
 ok = .true.
 initialized = .false.
@@ -151,10 +168,7 @@ call logger("ReadCellParams")
 call ReadCellParams(ok)
 if (.not.ok) return
 call logger("did ReadCellParams")
-
-call SetupGrowthData
-call logger('did SetupGrowthData')
-
+!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
 if (ncpu == 0) then
 	ncpu = ncpu_input
 endif
@@ -176,6 +190,38 @@ call logger(logmsg)
 #endif
 
 call RngInitialisation
+
+if (use_cellml) then
+	if (.not.use_TCP) then
+		call loadCellML
+	endif
+	write(nflog,*)
+	write(nflog,*) 'CellML model data: ',cellmlfile
+	write(nflog,*) 'Components: #: ',ncomponents
+	write(nflog,'(a)') component(0:ncomponents-1)
+	write(nflog,*) 'Variables: '
+	do k = 0,nvariables-1
+		write(nflog,'(i4,2x,2a30,i3,f10.6)') k,IDlist(k)%comp_name(1:30),IDlist(k)%var_name(1:30),IDlist(k)%comp_index,csim_state(k)
+		if (trim(IDlist(k)%var_name) == 'Wnt') WNT_NUMBER = k
+		if (trim(IDlist(k)%var_name) == 'cyclin') CYCLIN_NUMBER = k
+	enddo
+	write(nflog,*) 'WNT_NUMBER: ',WNT_NUMBER
+	write(nflog,*) 'CYCLIN_NUMBER: ',CYCLIN_NUMBER
+	write(nflog,*)
+	! At this point, the CellmlSimulator csim_list[0].pcsim holds the initial parameter values and state variables
+	! These values are copied into state0
+	if (allocated(cellml_state0)) then
+		deallocate(cellml_state0)
+	endif
+	allocate(cellml_state0(0:nvariables-1))
+	call getState(0,cellml_state0)
+!	signal_max = cellml_state0(4)	! Note that this may be hard-wired for a specific CellML model!!!!!
+	call WntGrowth
+	call exit
+endif
+
+call SetupGrowthData
+call logger('did SetupGrowthData')
 
 call PlaceCells
 !do kcell = 1,ncells
@@ -200,6 +246,63 @@ enddo
 may_collide = .false.
 first_collide = .true.
 
+end subroutine
+
+!----------------------------------------------------------------------------------------- 
+!----------------------------------------------------------------------------------------- 
+subroutine WntGrowth
+use iso_c_binding, only: C_CHAR
+integer :: kcell = 1
+integer :: nt = 5*24*60
+integer :: it, ksim, k, i
+real(REAL_KIND) :: tnow, cyclinD, signal, cellml_dt, interval_dt
+real(REAL_KIND), allocatable :: cellml_state(:)
+character(kind=c_char,len=128) :: cellmlfile_c
+allocate(cellml_state(0:nvariables-1))
+
+write(nflog,*) 'WntGrowth'
+cellmlfile_c = cellmlfile
+write(logmsg,'(a)') 'Solving CellML model to determine cyclinD rise time as a function of Wnt signal'
+call logger(logmsg)
+write(logmsg,'(a)') 'Wnt signal is varied in 100 steps up to the maximum level'
+call logger(logmsg)
+write(logmsg,'(a)') 'cyclinD is initially 0, and the ODE system is solved for 5 days'
+call logger(logmsg)
+write(logmsg,'(a)') 'The rise time is reached when cyclinD rises to the threshold level'
+call logger(logmsg)
+write(logmsg,'(a)') 'The results are in mcell.log'
+call logger(logmsg)
+!ksim = cell_list(kcell)%ksim
+!write(nflog,*) 'ksim: ',ksim
+ksim = 1
+write(nflog,*) 'call setupCellmlSimulator'
+!cellmlfile(49:49) = char(0)
+!write(nflog,*) 'cellmlfile_c: ',cellmlfile_c
+!do i = 1,128
+!	write(nflog,'(i4,2x,a,2x,i4)') i,cellmlfile_c(i:i),ichar(cellmlfile_c(i:i))
+!enddo
+call setupCellmlSimulator(ksim,cellmlfile_c)
+DELTA_T = 1	! min
+cellml_dt = 0.1
+interval_dt = DELTA_T	! Wnt_Cyclin uses time unit = min
+write(nflog,*) 
+write(nflog,*) 'cyclinD rise time vs. signal strength'
+do k = 1,100
+	signal = signal_max*k/100.
+	cellml_state = cellml_state0
+	cellml_state(WNT_NUMBER) = signal	! Wnt
+	do it = 1,nt
+		tnow = it*DELTA_T
+		call resetIntegrator(ksim)
+		call setState(ksim,cellml_state)
+		call multiStep(ksim,0.0, interval_dt, cellml_dt);
+		call getState(ksim,cellml_state)
+		cyclinD = cellml_state(CYCLIN_NUMBER)
+		if (cyclinD >= cyclin_threshold) exit
+	enddo
+	write(nflog,'(i4,a,f6.3,a,f6.2)') k,' signal: ',signal,' cyclinD rise time (h): ',tnow/60
+enddo
+stop
 end subroutine
 
 !-----------------------------------------------------------------------------------------
@@ -719,10 +822,10 @@ awp_0%is_open = .false.
 awp_1%is_open = .false.
 par_zig_init = .false.
 logfile = 'mcell.log'
-inquire(unit=nflog,OPENED=isopen)
-if (.not.isopen) then
+!inquire(unit=nflog,OPENED=isopen)
+!if (.not.isopen) then
     open(nflog,file=logfile,status='replace')
-endif
+!endif
 #if defined(OPENMP) || defined(_OPENMP)
     write(logmsg,'(a)') 'Executing with OpenMP'
 	call logger(logmsg)
@@ -855,7 +958,7 @@ else
 	call logger('  === Execution failed ===')
 endif
 !write(logmsg,'(a,f10.2)') 'Execution time (min): ',(wtime() - execute_t1)/60
-call logger(logmsg)
+!call logger(logmsg)
 
 !close(nflog)
 

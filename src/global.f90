@@ -121,6 +121,8 @@ real(REAL_KIND) :: dx_init
 
 integer :: NX, NY, NZ
 integer :: Mnodes, ncpu_input, ncells, nsteps, istep, nitsolver
+integer :: WNT_NUMBER, CYCLIN_NUMBER
+real(REAL_KIND) :: signal_max, cyclin_threshold
 integer :: seed(2)
 real(REAL_KIND) :: DELTA_T
 type(Fparam_type) :: FP1, FP2
@@ -256,6 +258,7 @@ do i = 0,npar-1
 enddo
 call par_zigset(npar,zig_seed,grainsize)
 par_zig_init = .true.
+write(nflog,*) 'did RngInitialisation'
 end subroutine
 
 !---------------------------------------------------------------------

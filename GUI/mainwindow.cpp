@@ -3526,6 +3526,8 @@ void MainWindow::setGraphsActive()
 void MainWindow::on_cbox_USE_CELLML_toggled(bool checked)
 {
     pushButtonGetCellMLFile->setEnabled(checked);
+    line_SIGNAL_MAX->setEnabled(checked);
+    line_CYCLIN_THRESHOLD->setEnabled(checked);
 }
 
 /*

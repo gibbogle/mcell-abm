@@ -149,7 +149,7 @@ integer(c_int),value :: icomp, ivar
 real(c_double) :: variable_value
 integer :: nv, i
 
-write(nflog,*) 'CellML_get_variable_value: ',icomp,ivar
+!write(nflog,*) 'CellML_get_variable_value: ',icomp,ivar
 call getState(0,csim_state)
 !write(nflog,'(10f7.3)') csim_state
 nv = 0
@@ -157,7 +157,7 @@ do i = 0,nvariables-1
 	if (IDlist(i)%comp_index == icomp) then
 		if (ivar == nv) then
 			variable_value = csim_state(i)
-			write(nflog,*) icomp,ivar,variable_value
+!			write(nflog,*) icomp,ivar,variable_value
 !			if (icomp == 2 .and. ivar == 5) stop
 			return
 		endif

@@ -73,6 +73,15 @@ Params::Params()
 "Use CellML?",
 "Growth controlled by signal and pathway dynamics described by CellML model (NOT IMPLEMENTED YET)"},
 
+{"SIGNAL_MAX", 1.0,0,0,
+ "Maximum signal",
+ "Signal strength is maxmum at the right side of the blob (max x), and decays with distance d in the negative x direction by: \n\
+  S = Smax.exp(-Kdecay*d) where d is the number of grids"},
+
+{"CYCLIN_THRESHOLD", 0.04,0,0,
+ "Cyclin threshold for division",
+ "A cell enters cell cycle when the cyclin-D level reaches this threshold"},
+
 {"CELLML_FILE", 0, 0, 0,
 "",
 "CellML file for the cell growth model"},
