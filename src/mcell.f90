@@ -16,7 +16,6 @@ subroutine ReadCellParams(ok)
 logical :: ok
 real(REAL_KIND) :: hours
 integer :: nb0, nt_anim, iuse_cellml, i
-character*(256) :: cellmlfile
 
 ! Set up growth data arrays
 if (allocated(growth_file)) deallocate(growth_file)
@@ -71,17 +70,8 @@ read(nfin,*) growth_file(4)
 read(nfin,*) growth_file(5)
 close(nfin)
 
-! Put string-terminating NULL at first " "
-!cellmlfile = adjustl(cellmlfile)
-!i = index(cellmlfile,' ')
-!cellmlfile(i:128) = char(0)
-!cellmlfile=TRIM(ADJUSTL(cellmlfile))//char(0)
-
-!write(nflog,*) 'cellmlfile: ',cellmlfile
-!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
-!do i = 1,128
-!	write(nflog,'(i4,2x,a,2x,i4)') i,cellmlfile(i:i),ichar(cellmlfile(i:i))
-!enddo
+! Put string-terminating NULL at first " " for C call (probably not needed - not in cells.f90)
+cellmlfile=TRIM(ADJUSTL(cellmlfile))//char(0)
 
 use_cellml = (iuse_cellml == 1)
 if (use_cellml) then
@@ -104,7 +94,6 @@ write(logmsg,*) 'nitsolver: ',nitsolver
 call logger(logmsg)
 write(logmsg,*) 'hours,nsteps: ',hours,nsteps 
 call logger(logmsg)
-!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
 ok = .true.
 end subroutine 
 
@@ -164,11 +153,9 @@ istep = 0
 
 inputfile = infile
 outputfile = outfile
-call logger("ReadCellParams")
+!call logger("ReadCellParams")
 call ReadCellParams(ok)
 if (.not.ok) return
-call logger("did ReadCellParams")
-!write(nflog,'(a,2x,i2)') 'cellmlfile(49): ',ichar(cellmlfile(49:49))
 if (ncpu == 0) then
 	ncpu = ncpu_input
 endif
@@ -276,11 +263,6 @@ call logger(logmsg)
 !write(nflog,*) 'ksim: ',ksim
 ksim = 1
 write(nflog,*) 'call setupCellmlSimulator'
-!cellmlfile(49:49) = char(0)
-!write(nflog,*) 'cellmlfile_c: ',cellmlfile_c
-!do i = 1,128
-!	write(nflog,'(i4,2x,a,2x,i4)') i,cellmlfile_c(i:i),ichar(cellmlfile_c(i:i))
-!enddo
 call setupCellmlSimulator(ksim,cellmlfile_c)
 DELTA_T = 1	! min
 cellml_dt = 0.1
